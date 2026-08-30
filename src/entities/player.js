@@ -402,6 +402,66 @@ export class Player {
     audio.setListener(cam.position, this.right);
   }
 
+  /**
+   * Aim assist.
+   *
+   * Thumb-aiming a head at twenty metres is not reasonable, so on touch the
+   * view is gently pulled toward the nearest target already close to the
+   * crosshair. Two rules keep it from playing the game for you: the pull
+   * strength falls off to zero at the edge of the cone, and it only acts while
+   * you are actually looking or firing — park your thumb and it stops.
+   *
+   * Returns the target it locked onto, or null.
+   */
+  aimAssist(dt, zombies, collision, opts = {}) {
+    const {
+      range = 46, cone = 0.14, strength = 3.4, firing = false, looking = false,
+    } = opts;
+    if (this.dead) return null;
+    if (!firing && !looking) return null;
+
+    const cam = this.stage.camera;
+    const dir = this._aimDir || (this._aimDir = new THREE.Vector3());
+    dir.set(0, 0, -1).applyQuaternion(cam.quaternion);
+
+    const eye = cam.position;
+    const cosCone = Math.cos(cone);
+    let best = null, bestDot = cosCone, bestDist = 0;
+    const to = this._aimTo || (this._aimTo = new THREE.Vector3());
+
+    for (let i = 0; i < zombies.alive.length; i++) {
+      const z = zombies.alive[i];
+      if (z.state === 'dying' || z.state === 'dead') continue;
+      to.set(z.pos.x - eye.x, (z.pos.y + z.height * 0.68) - eye.y, z.pos.z - eye.z);
+      const dist = to.length();
+      if (dist > range || dist < 0.6) continue;
+      to.multiplyScalar(1 / dist);
+      const d = to.dot(dir);
+      if (d > bestDot) { bestDot = d; best = z; bestDist = dist; }
+    }
+    if (!best) return null;
+
+    // Only one line-of-sight test, on the winner.
+    const chest = this._aimChest || (this._aimChest = new THREE.Vector3());
+    chest.set(best.pos.x, best.pos.y + best.height * 0.68, best.pos.z);
+    if (collision && !collision.visible(eye, chest)) return null;
+
+    to.set(chest.x - eye.x, chest.y - eye.y, chest.z - eye.z).normalize();
+    const targetYaw = Math.atan2(-to.x, -to.z);
+    const targetPitch = Math.asin(clamp(to.y, -1, 1));
+
+    // Full strength dead ahead, nothing at the cone's edge.
+    const angle = Math.acos(clamp(bestDot, -1, 1));
+    const falloff = 1 - clamp(angle / cone, 0, 1);
+    const k = strength * falloff * falloff * (firing ? 1.35 : 0.7)
+      * clamp(1 - bestDist / range, 0.25, 1);
+
+    this.yaw = dampAngle(this.yaw, targetYaw, k, dt);
+    this.pitch = clamp(damp(this.pitch, targetPitch, k, dt), -1.52, 1.52);
+    this._updateBasis();
+    return best;
+  }
+
   /** World-space muzzle origin for hitscan: eye position, forward direction. */
   aimRay(outOrigin, outDir) {
     outOrigin.copy(this.stage.camera.position);

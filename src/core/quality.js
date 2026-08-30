@@ -51,6 +51,38 @@ export const PRESETS = {
 
 export const PRESET_ORDER = ['low', 'medium', 'high', 'ultra'];
 
+/**
+ * Caps a preset for phone-class hardware.
+ *
+ * A mobile GPU's problem is not raw shading power so much as memory bandwidth
+ * and thermal headroom, so the things clamped hardest are the ones that move
+ * the most pixels: device pixel ratio (a 3x phone screen is 8x the fill of a
+ * 1x one for no visible gain at this art density), shadow map size, draw
+ * distance, and how many skinned characters are on screen. Ambient occlusion
+ * goes entirely — it is the worst cost-to-benefit ratio on a small screen.
+ */
+export function mobilePreset(preset) {
+  return {
+    ...preset,
+    maxPixelRatio: Math.min(preset.maxPixelRatio, 1.0),
+    renderScale: Math.min(preset.renderScale, 0.85),
+    shadowMapSize: Math.min(preset.shadowMapSize, 1024),
+    shadowDistance: Math.min(preset.shadowDistance, 24),
+    ssao: false,
+    anisotropy: Math.min(preset.anisotropy, 4),
+    envMapSize: Math.min(preset.envMapSize, 128),
+    maxZombies: Math.min(preset.maxZombies, 26),
+    zombieShadowDistance: Math.min(preset.zombieShadowDistance, 12),
+    animLodDistance: Math.min(preset.animLodDistance, 15),
+    particleBudget: Math.min(preset.particleBudget, 340),
+    decalBudget: Math.min(preset.decalBudget, 64),
+    drawDistance: Math.min(preset.drawDistance, 125),
+    fogDensity: Math.max(preset.fogDensity, 0.030),
+    dynamicLights: Math.min(preset.dynamicLights, 4),
+    mobile: true,
+  };
+}
+
 /** Cheap capability probe: GPU renderer string + core count + memory. */
 export function detectTier() {
   try {

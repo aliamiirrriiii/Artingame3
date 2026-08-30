@@ -1,7 +1,8 @@
 import * as THREE from 'three';
-import { PRESETS, detectTier, AdaptiveScaler } from './core/quality.js';
+import { PRESETS, detectTier, mobilePreset, AdaptiveScaler } from './core/quality.js';
 import { AssetManager, MANIFEST } from './core/assets.js';
 import { Input } from './core/input.js';
+import { TouchInput, isTouchDevice } from './core/touch.js';
 import { audio } from './core/audio.js';
 import { clamp, damp, fmt, rand, RollingAverage } from './core/util.js';
 import { Stage } from './render/stage.js';
@@ -51,10 +52,11 @@ class Game {
     this.error = null;
 
     this.settings = this._loadSettings();
+    this.isTouch = isTouchDevice();
     const forced = new URLSearchParams(location.search).get('q');
     this.presetKey = (forced && PRESETS[forced] ? forced : null)
       || this.settings.quality || detectTier();
-    this.preset = PRESETS[this.presetKey] || PRESETS.medium;
+    this.preset = this._resolvePreset(this.presetKey);
 
     this.clock = new THREE.Clock();
     this.elapsed = 0;
@@ -81,6 +83,12 @@ class Game {
 
   // -------------------------------------------------------------- settings
 
+  /** Applies the phone caps on top of the chosen tier. */
+  _resolvePreset(key) {
+    const base = PRESETS[key] || PRESETS.medium;
+    return this.isTouch ? mobilePreset(base) : base;
+  }
+
   _loadSettings() {
     let s = {};
     try { s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'); } catch { /* fresh profile */ }
@@ -91,6 +99,9 @@ class Game {
       sensitivity: s.sensitivity ?? 100,
       volume: s.volume ?? 70,
       invertY: s.invertY ?? false,
+      touchSensitivity: s.touchSensitivity ?? 100,
+      autoFire: s.autoFire ?? true,
+      aimAssist: s.aimAssist ?? true,
     };
   }
 
@@ -168,7 +179,11 @@ class Game {
 
       this.hud = new HUD(this.stage);
       this.input = new Input(this.canvas);
+      this.touchInput = this.isTouch
+        ? new TouchInput(this.canvas, document.getElementById('touch'))
+        : null;
       this.botInput = this.botMode ? new BotInput() : null;
+      if (this.isTouch) this._setupTouch();
 
       this.scaler = new AdaptiveScaler(this.preset, this.settings.targetFps);
       this.scaler.enabled = this.settings.adaptive;
@@ -226,6 +241,63 @@ class Game {
     if (z) this.zombies._release(z);
     for (const p of this.director.powerups) this.director._despawnPowerup(p);
     this.effects.clear();
+  }
+
+  /**
+   * Touch mode. Pointer lock does not exist here, so the game is driven by the
+   * on-screen controls; the rest is the housekeeping a phone needs to behave
+   * like an app — landscape only, immersive, and the screen kept awake.
+   */
+  _setupTouch() {
+    document.body.classList.add('touch');
+    const t = this.touchInput;
+
+    t.onPause = () => this._pause();
+    t.onFirstTouch = () => this._enterImmersive();
+    t.setAutoFire(this.settings.autoFire);
+    t.sensitivity = 0.0035 * (this.settings.touchSensitivity / 100);
+    t.invertY = this.settings.invertY;
+
+    const checkOrientation = () => {
+      const portrait = window.innerHeight > window.innerWidth;
+      document.body.classList.toggle('portrait', portrait);
+      t.refreshRects();
+    };
+    checkOrientation();
+    window.addEventListener('resize', checkOrientation);
+    window.addEventListener('orientationchange', () => setTimeout(checkOrientation, 120));
+
+    // Nothing in the page should ever scroll, zoom or select.
+    document.addEventListener('gesturestart', (e) => e.preventDefault());
+    document.addEventListener('dblclick', (e) => e.preventDefault());
+  }
+
+  /** Fullscreen + landscape lock + wake lock. Each is best-effort. */
+  async _enterImmersive() {
+    try {
+      if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+        await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+      }
+    } catch { /* the WebView shell already runs immersive */ }
+    try {
+      if (screen.orientation && screen.orientation.lock) await screen.orientation.lock('landscape');
+    } catch { /* not permitted outside fullscreen on some devices */ }
+    try {
+      if ('wakeLock' in navigator) {
+        this._wakeLock = await navigator.wakeLock.request('screen');
+        document.addEventListener('visibilitychange', async () => {
+          if (document.visibilityState === 'visible' && !this._wakeLock) {
+            try { this._wakeLock = await navigator.wakeLock.request('screen'); } catch { /* denied */ }
+          }
+        });
+      }
+    } catch { /* no wake lock support */ }
+    audio.init();
+  }
+
+  get activeInput() {
+    if (this.botMode) return this.botInput;
+    return this.isTouch ? this.touchInput : this.input;
   }
 
   _wire() {
@@ -391,12 +463,15 @@ class Game {
 
     this.state = 'playing';
     this._setScreen(null);
+    document.body.classList.add('playing');
+    if (this.touchInput) { this.touchInput.reset(); this.touchInput.refreshRects(); }
     if (!this.botMode) {
       audio.init();
       audio.startWind();
       const buf = this.assets.buffers.get('ambience');
       if (buf) audio.setAmbienceBuffer(buf);
-      this.input.requestLock();
+      if (!this.isTouch) this.input.requestLock();
+      else this._enterImmersive();
     }
   }
 
@@ -404,6 +479,8 @@ class Game {
     if (this.state !== 'playing') return;
     this._wantResume = false;
     this.state = 'paused';
+    document.body.classList.remove('playing');
+    if (this.touchInput) this.touchInput.reset();
     this.input.exitLock();
     audio.suspend();
     document.getElementById('pause-sub').textContent =
@@ -413,6 +490,16 @@ class Game {
 
   _resume() {
     if (this.state !== 'paused' || this._wantResume) return;
+    if (this.isTouch) {
+      // No lock to reacquire — go straight back in.
+      this.state = 'playing';
+      document.body.classList.add('playing');
+      this._setScreen(null);
+      this.touchInput.reset();
+      this.touchInput.refreshRects();
+      audio.resume();
+      return;
+    }
     // Browsers rate-limit re-locking the pointer after an exit; ask, and let
     // the lock-change handler decide when we are actually back in the game.
     this._wantResume = true;
@@ -436,6 +523,8 @@ class Game {
     if (this.state === 'dead') return;
     this.state = 'dead';
     this.director.stop();
+    document.body.classList.remove('playing');
+    if (this.touchInput) this.touchInput.reset();
     this.input.exitLock();
     this.hud.setHudVisible(false);
 
@@ -498,12 +587,28 @@ class Game {
     vol.value = this.settings.volume;
     document.getElementById('val-sens').textContent = this.settings.sensitivity;
     document.getElementById('val-vol').textContent = this.settings.volume;
+
+    for (const b of document.querySelectorAll('#seg-autofire button')) {
+      b.classList.toggle('on', (b.dataset.af === '1') === !!this.settings.autoFire);
+    }
+    for (const b of document.querySelectorAll('#seg-assist button')) {
+      b.classList.toggle('on', (b.dataset.aa === '1') === !!this.settings.aimAssist);
+    }
+    const tsens = document.getElementById('set-tsens');
+    tsens.value = this.settings.touchSensitivity;
+    document.getElementById('val-tsens').textContent = this.settings.touchSensitivity;
+
+    if (this.touchInput) {
+      this.touchInput.sensitivity = 0.0035 * (this.settings.touchSensitivity / 100);
+      this.touchInput.invertY = this.settings.invertY;
+      this.touchInput.setAutoFire(this.settings.autoFire);
+    }
   }
 
   _setQuality(key) {
     if (!PRESETS[key] || key === this.presetKey) return;
     this.presetKey = key;
-    this.preset = PRESETS[key];
+    this.preset = this._resolvePreset(key);
     this.settings.quality = key;
     this._saveSettings();
 
@@ -534,6 +639,8 @@ class Game {
     on('btn-pause-settings', () => this._setScreen('settings'));
     on('btn-quit', () => {
       this.state = 'menu';
+      document.body.classList.remove('playing');
+      if (this.touchInput) this.touchInput.reset();
       this.director.stop();
       this.zombies.clear();
       this.effects.clear();
@@ -541,7 +648,13 @@ class Game {
       this._setScreen('menu');
     });
     on('btn-retry', () => this.startRun());
-    on('btn-menu', () => { this.state = 'menu'; this.hud.setHudVisible(false); this._setScreen('menu'); });
+    on('btn-menu', () => {
+      this.state = 'menu';
+      document.body.classList.remove('playing');
+      if (this.touchInput) this.touchInput.reset();
+      this.hud.setHudVisible(false);
+      this._setScreen('menu');
+    });
 
     for (const b of document.querySelectorAll('#seg-quality button')) {
       b.classList.add('clickable');
@@ -579,6 +692,28 @@ class Game {
       this.input.sensitivity = 0.0022 * (this.settings.sensitivity / 100);
       this._saveSettings();
     });
+    for (const b of document.querySelectorAll('#seg-autofire button')) {
+      b.classList.add('clickable');
+      b.addEventListener('click', () => {
+        this.settings.autoFire = b.dataset.af === '1';
+        this._saveSettings(); this._applySettings();
+      });
+    }
+    for (const b of document.querySelectorAll('#seg-assist button')) {
+      b.classList.add('clickable');
+      b.addEventListener('click', () => {
+        this.settings.aimAssist = b.dataset.aa === '1';
+        this._saveSettings(); this._applySettings();
+      });
+    }
+    const tsens = document.getElementById('set-tsens');
+    tsens.addEventListener('input', () => {
+      this.settings.touchSensitivity = Number(tsens.value);
+      document.getElementById('val-tsens').textContent = tsens.value;
+      if (this.touchInput) this.touchInput.sensitivity = 0.0035 * (Number(tsens.value) / 100);
+      this._saveSettings();
+    });
+
     const vol = document.getElementById('set-vol');
     vol.addEventListener('input', () => {
       this.settings.volume = Number(vol.value);
@@ -649,13 +784,18 @@ class Game {
 
   update(dt) {
     const playing = this.state === 'playing';
-    const input = this.botMode ? this.botInput : this.input;
+    const input = this.activeInput;
 
     if (this.botMode) this.botInput.update(dt, this);
+    else if (this.touchInput) this.touchInput.tick(dt);
 
     if (playing) this.runTime += dt;
 
     this.player.update(dt, input, { canMove: playing });
+
+    // Touch assists run after the look input has been applied and before
+    // firing is resolved, so a shot fired this frame uses the assisted aim.
+    if (playing && this.isTouch && !this.player.dead) this._updateTouchAssist(dt, input);
 
     // Death is checked here rather than only on the melee path: you can just
     // as easily be killed by your own grenade, a spitter, or a barrel you
@@ -694,6 +834,73 @@ class Game {
     input.endFrame();
   }
 
+  /**
+   * Aim assist and auto-fire.
+   *
+   * Auto-fire is an exact test — a ray down the crosshair that has to reach a
+   * zombie without passing through geometry first — rather than a cone, so it
+   * never fires at a wall. It is disabled for the knife and the grenade
+   * launcher, where firing at whatever happens to be in front of you is a bad
+   * idea for different reasons.
+   */
+  _updateTouchAssist(dt, input) {
+    const t = this.touchInput;
+    if (!t) return;
+
+    if (this.settings.aimAssist) {
+      this.player.aimAssist(dt, this.zombies, this.level.collision, {
+        firing: input.buttons[0],
+        looking: !!t.lookActive,
+        strength: this.combat.adsAmount > 0.5 ? 4.6 : 3.4,
+        cone: this.combat.adsAmount > 0.5 ? 0.10 : 0.15,
+      });
+    }
+
+    let want = false;
+    if (this.settings.autoFire) {
+      const w = this.combat.spec;
+      const canAuto = w.kind !== 'melee' && w.kind !== 'projectile';
+      const ready = this.combat.mag > 0 && !this.combat.reloading && !this.player.sprinting;
+      if (canAuto && ready) {
+        const o = this._afOrigin || (this._afOrigin = new THREE.Vector3());
+        const d = this._afDir || (this._afDir = new THREE.Vector3());
+        this.player.aimRay(o, d);
+        const maxDist = Math.min(w.range ?? 60, 70);
+        const hit = this.zombies.raycast(o, d, maxDist, this._afOut || (this._afOut = {}));
+        if (hit) {
+          const wall = this.level.collision.raycast(o, d, hit.distance - 0.05,
+            this._afWall || (this._afWall = {}));
+          want = !wall;
+        }
+      }
+    }
+
+    // Never override a thumb that is already on the trigger.
+    input.buttons[0] = t.fireHeld || want;
+    if (want) input.buttonsPressed[0] = true;
+  }
+
+  /** Keeps the contextual touch buttons in step with the game state. */
+  _updateTouchHud() {
+    const t = this.touchInput;
+    if (!t) return;
+
+    const p = this.economy.prompt;
+    t.setButtonVisible('interact', !!p);
+    if (p) t.setLabel('interact', p.cost > 0 ? `${p.action} · ${fmt(p.cost)}` : p.action);
+
+    const hud = this.combat.hudState();
+    for (let i = 0; i < 4; i++) {
+      const id = `slot${i + 1}`;
+      const visible = i < hud.owned.length;
+      t.setButtonVisible(id, visible);
+      if (visible) {
+        t.setLabel(id, hud.owned[i]);
+        t.setActive(id, i === hud.index);
+      }
+    }
+  }
+
   _updateHud(dt, playing) {
     const d = this.director;
     if (playing) {
@@ -718,6 +925,7 @@ class Game {
       this.hud.setBoxSpin(this.economy.boxSpinLabel);
       this.hud.setPowerups(this.powerupsActive);
       this.hud.setPoints(this.economy.points, 0);
+      if (this.isTouch) this._updateTouchHud();
     }
 
     // Grade uniforms driven by player state.
@@ -761,6 +969,13 @@ class Game {
       preset: this.preset?.name,
       frames: this.frameCount,
       screen: this._screen ?? null,
+      isTouch: !!this.isTouch,
+      bodyClass: document.body.className,
+      autoFire: !!this.settings.autoFire,
+      aimAssist: !!this.settings.aimAssist,
+      playerPosF: this.player ? [ +this.player.pos.x.toFixed(2), +this.player.pos.z.toFixed(2) ] : null,
+      yaw: this.player ? +this.player.yaw.toFixed(3) : null,
+      pitch: this.player ? +this.player.pitch.toFixed(3) : null,
       shotsFired: this.combat?.shotsFired ?? 0,
       shotsHit: this.combat?.shotsHit ?? 0,
       spawned: this.director?.spawnedThisWave ?? 0,
@@ -875,6 +1090,11 @@ function formatTime(s) {
   return `${m}:${String(sec).padStart(2, '0')}`;
 }
 
-const game = new Game();
-window.__game = game;
-game.boot().catch((e) => console.error('boot failed', e));
+if (window.__bootBlocked) {
+  // The capability gate in index.html already explained what is missing.
+  console.warn('boot skipped:', window.__bootBlocked);
+} else {
+  const game = new Game();
+  window.__game = game;
+  game.boot().catch((e) => console.error('boot failed', e));
+}

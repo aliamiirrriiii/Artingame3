@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only the WebView's localStorage matters: settings and the best run. -->
+<full-backup-content>
+    <include domain="database" path="." />
+    <exclude domain="cache" path="." />
+</full-backup-content>

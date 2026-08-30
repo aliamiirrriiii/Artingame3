@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#141018" android:pathData="M0,0h108v108h-108z" />
+    <!-- A faint vignette so the mark reads on light launcher backgrounds. -->
+    <path android:fillColor="#0A0508" android:pathData="M54,54m-52,0a52,52 0,1 1,104 0a52,52 0,1 1,-104 0" />
+</vector>

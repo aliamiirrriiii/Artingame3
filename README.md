@@ -159,6 +159,9 @@ detail.
 | `1`–`4`, wheel, `Q` | Switch weapon, last weapon |
 | `Esc` · `F3` | Pause · Performance overlay |
 
+On a touchscreen the game switches to on-screen controls automatically — see
+[Touch controls](#touch-controls).
+
 ## Assets
 
 Every runtime asset is **downloaded from the web** by `tools/fetch-assets.mjs`,
@@ -184,18 +187,122 @@ vocals that differ per archetype, wet impacts, ricochet whines and an ambient
 wind bed that brightens as the horde closes in. Nothing is sampled, so every
 shot and every growl is slightly different.
 
+---
+
+## Android
+
+The game ships as an Android app: a single-activity WebView shell that serves
+the bundled game from inside the APK. Everything is offline — no network
+permission, nothing fetched at runtime.
+
+### Getting an APK
+
+**From CI (nothing to install).** Push the branch and the
+`Build Android APK` workflow assembles it, then attaches
+`night-of-the-risen-debug-apk` to the run. Download, copy to the phone, install.
+It is signed with the standard debug key, so it installs on any device with
+"install unknown apps" allowed for your file manager.
+
+**Locally**, with the Android SDK present (Android Studio, or just
+command-line tools):
+
+```bash
+npm run assets                       # once — downloads the asset pack
+cd android && ./gradlew assembleDebug
+# → android/app/build/outputs/apk/debug/app-debug.apk
+adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+For a store-ready build, put a keystore in `~/.gradle/gradle.properties`:
+
+```properties
+NOTR_STORE_FILE=/absolute/path/to/keystore.jks
+NOTR_STORE_PASSWORD=…
+NOTR_KEY_ALIAS=…
+NOTR_KEY_PASSWORD=…
+```
+
+…then `./gradlew assembleRelease`. Without those properties the release task
+still runs and produces an unsigned APK you can sign yourself with `apksigner`.
+
+> **Why the APK is not committed here.** The Android Gradle Plugin is published
+> only on Google's Maven repository, and both `dl.google.com` and
+> `maven.google.com` are blocked by egress policy in the environment this was
+> authored in — so is the Android SDK download. Everything that does not need
+> them is done and verified: the Android project, the manifest, the activity,
+> the resources, the Gradle wrapper, and the touch build of the game. What is
+> left is the compile step itself, which is one command anywhere the SDK is
+> reachable, or one push for CI.
+
+### What the shell does
+
+| | |
+|---|---|
+| Origin | Served through `WebViewAssetLoader` on `https://appassets.androidplatform.net`, **not** `file://` — a `file://` page has an opaque origin and ES modules, import maps and `fetch` are all blocked there |
+| Display | Sticky immersive, `sensorLandscape`, draws into the display cutout |
+| Lifecycle | Back pauses a run (and only leaves from a menu); `onPause` pauses the game and stops the timers so it does not drain battery in the background |
+| Storage | DOM storage on, so settings and your best run survive a restart |
+| Gestures | Zoom, long-press selection, overscroll and text auto-sizing all disabled — the page owns every touch |
+| Assets | `glb`/`hdr`/`jpg`/`png`/`ogg` are stored uncompressed in the APK; they are already compressed, so re-packing them only costs load time on device |
+
+The web build is the single source of truth: a Gradle `Sync` task mirrors
+`index.html`, `src/`, `vendor/` and `assets/` into the APK at build time, so
+there is no second copy to keep up to date.
+
+**Requirements:** Android 8.0 (API 26) or newer, and a System WebView recent
+enough for WebGL2 and import maps. If either is missing the game says so
+explicitly on the loading screen rather than showing a black rectangle.
+
+### Touch controls
+
+| | |
+|---|---|
+| Left half | Floating movement stick — the base appears wherever your thumb lands, so you never have to find it without looking |
+| Left half, held forward | Auto-sprint after a moment; no extra button |
+| Right half | Drag anywhere to look |
+| FIRE | Hold to fire — and **drag off it to keep firing while you turn**, which is the only way to shoot something that is moving |
+| AIM / CROUCH | Toggles, so they cost a tap rather than a held thumb |
+| RELOAD · FRAG · JUMP · LIGHT | Tap |
+| Weapon slots | Down the right edge; the active one is highlighted |
+| BUY | Appears in the centre only when you are standing at a station, labelled with the action and the price |
+
+Two assists make thumb-aiming viable, both switchable in Settings:
+
+- **Aim assist** pulls the view toward a target already near the crosshair. Its
+  strength falls to zero at the edge of the cone and it only acts while you are
+  actually looking or firing — park your thumb and it stops.
+- **Auto-fire** shoots when the crosshair is genuinely on a zombie. It is an
+  exact ray test that has to reach the target without passing through geometry
+  first, so it never fires at a wall, and it is off for the knife and the
+  grenade launcher.
+
+### Mobile performance
+
+Phone hardware is limited by memory bandwidth and heat more than raw shading,
+so `mobilePreset()` clamps what moves the most pixels: device pixel ratio to
+1.0 (a 3× screen is nine times the fill for no visible gain at this art
+density), shadow maps to 1k, draw distance to 125 m, live zombies to 26, and
+ambient occlusion off entirely. The adaptive scaler then defends the frame rate
+on top of that, so a weak device degrades resolution rather than dropping
+frames.
+
+---
+
 ## Project layout
 
 ```
+android/     Gradle project: WebView shell, manifest, resources, icon
 src/
-  core/      util, quality tiers + adaptive scaler, input, asset loader, audio synth
+  core/      util, quality tiers + adaptive scaler, input, touch input,
+             asset loader, audio synth
   render/    renderer + post chain, night sky, final grade, particles/decals/gore
   world/     PBR material library, arena generator, collision + flow-field nav
   entities/  player controller, zombie manager, archetype table
   weapons/   arsenal data, procedural viewmodels, combat resolution
   game/      wave director + power-ups, economy/perks/mystery box
   ui/        HUD
-tools/       asset manifest + downloader, headless test harness
+tools/       asset manifest + downloader, headless + touch test harnesses
+.github/     CI that assembles the APK and runs the browser checks
 vendor/      three.js r180 (build + addons), vendored so there is no install step
 ```
 
@@ -204,10 +311,17 @@ vendor/      three.js r180 (build + addons), vendored so there is no install ste
 Two layers, both runnable from a clean checkout:
 
 ```bash
-npm test      # 22 logic tests — no browser, no GPU, runs in under a second
-npm run smoke # boot, load assets, build the level, render, report timings
+npm test        # 22 logic tests — no browser, no GPU, runs in under a second
+npm run smoke   # boot, load assets, build the level, render, report timings
+npm run touch   # 18 touch-control checks in a landscape phone viewport
 node tools/smoke.mjs --page index.html --bot --run 60   # play it with a bot
 ```
+
+`npm run touch` drives the game with **real touch events through the DevTools
+Protocol** — not synthesised DOM events — and asserts that each control moves
+the thing it is supposed to: the stick walks the player, the right half turns
+the camera, FIRE fires, dragging off FIRE keeps firing *and* steers, and two
+thumbs work at once (the case a single-pointer implementation quietly breaks).
 
 `npm test` covers the pure systems where a regression is easy to introduce and
 hard to notice by playing: collision ejection and ray/OBB intersection, whether

@@ -1,0 +1,9 @@
+// Top-level build file. The Android Gradle Plugin lives on Google's Maven
+// repository, which is why a build needs network access to dl.google.com.
+plugins {
+    id 'com.android.application' version '8.7.2' apply false
+}
+
+tasks.register('clean', Delete) {
+    delete rootProject.layout.buildDirectory
+}

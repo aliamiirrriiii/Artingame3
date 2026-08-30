@@ -1,0 +1,101 @@
+plugins {
+    id 'com.android.application'
+}
+
+/*
+ * The web build is the single source of truth: the game lives at the repository
+ * root and is mirrored into the APK's assets at build time. `Sync` rather than
+ * `Copy` so a file deleted upstream also disappears from the APK instead of
+ * lingering as a stale asset.
+ */
+def repoRoot = rootProject.projectDir.parentFile
+
+tasks.register('syncGameAssets', Sync) {
+    description = 'Mirrors the web game into the APK assets.'
+    group = 'build'
+
+    from(repoRoot) {
+        include 'index.html'
+        include 'src/**'
+        include 'vendor/**'
+        include 'assets/**'
+    }
+    into layout.projectDirectory.dir('src/main/assets/www')
+
+    doFirst {
+        def missing = new File(repoRoot, 'assets/models/soldier.glb')
+        if (!missing.exists()) {
+            throw new GradleException(
+                "Game assets are missing. Run `npm run assets` in ${repoRoot} first.")
+        }
+    }
+}
+
+tasks.named('preBuild') { dependsOn 'syncGameAssets' }
+
+android {
+    namespace 'com.nightoftherisen.game'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "com.nightoftherisen.game"
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName "1.0"
+    }
+
+    signingConfigs {
+        release {
+            if (project.hasProperty('NOTR_STORE_FILE')) {
+                storeFile file(NOTR_STORE_FILE)
+                storePassword NOTR_STORE_PASSWORD
+                keyAlias NOTR_KEY_ALIAS
+                keyPassword NOTR_KEY_PASSWORD
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            // Installable as-is; signed with the standard debug key.
+            applicationIdSuffix ""
+            debuggable true
+        }
+        release {
+            minifyEnabled false
+            shrinkResources false
+            if (project.hasProperty('NOTR_STORE_FILE')) {
+                signingConfig signingConfigs.release
+            }
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    androidResources {
+        // Textures, models and HDRIs are already compressed; re-compressing
+        // them in the APK costs build time and decompression time on device
+        // for no size win.
+        noCompress += ['glb', 'hdr', 'jpg', 'png', 'ogg', 'gltf']
+    }
+
+    packaging {
+        resources.excludes += ['META-INF/*']
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+}
+
+dependencies {
+    // WebViewAssetLoader serves the bundled game over an https:// origin.
+    // Loading it from file:// would give the page an opaque origin, and ES
+    // module imports, import maps and fetch would all be blocked.
+    implementation 'androidx.webkit:webkit:1.12.1'
+}

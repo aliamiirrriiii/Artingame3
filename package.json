@@ -9,7 +9,9 @@
     "assets": "node tools/fetch-assets.mjs",
     "assets:force": "node tools/fetch-assets.mjs --force",
     "smoke": "node tools/smoke.mjs",
-    "test": "node tools/units.mjs"
+    "test": "node tools/units.mjs",
+    "touch": "node tools/touchtest.mjs",
+    "apk": "cd android && ./gradlew assembleDebug"
   },
   "engines": {
     "node": ">=18"

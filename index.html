@@ -2,7 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#05060a">
 <title>Night of the Risen</title>
 <meta name="description" content="A wave-survival zombie shooter running on WebGL2.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%A7%9F%3C/text%3E%3C/svg%3E">
@@ -391,6 +395,154 @@ html, body {
   background: rgba(4,5,8,.8); padding: 6px 12px; display: none;
 }
 #lowfps.show { display: block; }
+
+/* Rows that only make sense with a touchscreen. */
+.touch-only { display: none; }
+body.touch .touch-only { display: flex; }
+body.touch .mouse-only { display: none; }
+
+/* ------------------------------------------------------- touch controls */
+
+#touch { position: absolute; inset: 0; display: none; touch-action: none; }
+body.touch.playing #touch { display: block; pointer-events: auto; }
+
+#tc-stick-base, #tc-stick-knob {
+  position: absolute; left: 0; top: 0; border-radius: 50%;
+  opacity: 0; transition: opacity .12s; pointer-events: none;
+}
+#tc-stick-base {
+  width: 132px; height: 132px;
+  border: 2px solid rgba(232,228,220,.28);
+  background: rgba(8,9,12,.30);
+}
+#tc-stick-knob {
+  width: 58px; height: 58px;
+  border: 2px solid rgba(232,228,220,.6);
+  background: rgba(232,228,220,.16);
+}
+
+.tbtn {
+  position: absolute; display: grid; place-items: center;
+  font-family: var(--mono); letter-spacing: .1em; text-transform: uppercase;
+  color: rgba(232,228,220,.92);
+  border: 1.5px solid rgba(232,228,220,.34);
+  background: rgba(8,9,12,.42);
+  backdrop-filter: blur(3px);
+  border-radius: 50%;
+  user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
+  transition: background .08s, border-color .08s, transform .08s;
+}
+.tbtn.down { background: rgba(232,228,220,.26); border-color: rgba(232,228,220,.85); transform: scale(.94); }
+.tbtn.on { border-color: var(--gold); color: var(--gold); }
+
+/* Sizes scale with the short edge so a tablet does not get phone-sized buttons. */
+.tbtn.fire {
+  width: clamp(84px, 22vh, 132px); height: clamp(84px, 22vh, 132px);
+  font-size: clamp(11px, 2.4vh, 15px);
+  border-color: rgba(200,52,42,.6); background: rgba(90,14,10,.4); color: #ffd9d5;
+}
+.tbtn.fire.down { background: rgba(200,52,42,.42); }
+.tbtn.fire.auto::after {
+  content: 'AUTO'; position: absolute; bottom: 15%; font-size: 8px;
+  letter-spacing: .18em; color: var(--gold); opacity: .9;
+}
+.tbtn.med { width: clamp(52px, 13vh, 78px); height: clamp(52px, 13vh, 78px); font-size: clamp(8px, 1.7vh, 11px); }
+.tbtn.small { width: clamp(46px, 11vh, 66px); height: clamp(46px, 11vh, 66px); font-size: clamp(8px, 1.5vh, 10px); }
+.tbtn.slot {
+  width: clamp(38px, 9vh, 54px); height: clamp(26px, 6vh, 38px);
+  border-radius: 4px; font-size: clamp(8px, 1.5vh, 10px);
+}
+.tbtn.slot.on { background: rgba(232,228,220,.2); }
+
+.tc-right { position: absolute; right: 0; bottom: 0; }
+.tbtn.fire   { right: calc(env(safe-area-inset-right, 0px) + 3vh); bottom: 4vh; }
+.tbtn.med[data-touch="ads"]    { right: calc(env(safe-area-inset-right, 0px) + 4vh); bottom: calc(4vh + clamp(90px, 23vh, 140px)); }
+.tbtn.med[data-touch="reload"] { right: calc(env(safe-area-inset-right, 0px) + 3vh + clamp(90px, 23vh, 140px)); bottom: 5vh; }
+.tbtn.med[data-touch="nade"]   { right: calc(env(safe-area-inset-right, 0px) + 5vh + clamp(90px, 23vh, 140px)); bottom: calc(5vh + clamp(58px, 14vh, 86px)); }
+
+.tc-left { position: absolute; left: 0; bottom: 0; }
+.tbtn.small[data-touch="jump"]   { left: calc(env(safe-area-inset-left, 0px) + 2.5vh); bottom: 3vh; }
+.tbtn.small[data-touch="crouch"] { left: calc(env(safe-area-inset-left, 0px) + 2.5vh); bottom: calc(3vh + clamp(52px, 12.5vh, 74px)); }
+.tbtn.small[data-touch="light"]  { left: calc(env(safe-area-inset-left, 0px) + 2.5vh + clamp(52px, 12.5vh, 74px)); bottom: 3vh; }
+
+.tc-slots {
+  position: absolute; right: calc(env(safe-area-inset-right, 0px) + 1.5vh); top: 54px;
+  display: flex; flex-direction: column; gap: 5px;
+}
+.tc-slots .tbtn.slot { position: relative; right: auto; top: auto; }
+
+.tbtn.interact {
+  left: 50%; transform: translateX(-50%); bottom: 24vh;
+  width: auto; min-width: 128px; height: clamp(38px, 8vh, 52px);
+  padding: 0 20px; border-radius: 6px;
+  font-size: clamp(10px, 1.9vh, 13px);
+  border-color: rgba(224,182,74,.65); color: var(--gold); background: rgba(40,30,8,.5);
+  display: none;
+}
+.tbtn.interact.down { transform: translateX(-50%) scale(.96); }
+
+.tbtn.pause {
+  right: calc(env(safe-area-inset-right, 0px) + 1.5vh); top: 1.5vh;
+  width: 38px; height: 38px; border-radius: 6px; font-size: 12px; letter-spacing: .2em;
+}
+
+/* Landscape is the only sane orientation for two-thumb controls. */
+#rotate-hint {
+  position: absolute; inset: 0; display: none; place-items: center;
+  background: #05060a; z-index: 40; pointer-events: auto; text-align: center;
+}
+body.touch.portrait #rotate-hint { display: grid; }
+.rot-icon { font-size: 60px; color: var(--blood); animation: rot 2.4s ease-in-out infinite; }
+.rot-text { font-family: var(--mono); font-size: 12px; letter-spacing: .26em; color: var(--dim); margin-top: 18px; text-transform: uppercase; }
+@keyframes rot { 0%,100% { transform: rotate(0); } 50% { transform: rotate(90deg); } }
+
+/* ---------------------------------------------------------- touch HUD */
+/*
+ * Landscape phones have two thumb zones and a very short height, so the HUD is
+ * rearranged rather than merely shrunk: everything persistent moves to the top
+ * edge (out from under the thumbs), points go top-centre, and the ammo counter
+ * takes the bottom-centre gap between the two button clusters.
+ */
+body.touch .hud-corner { padding: 10px 14px; }
+body.touch #wave-num { font-size: 28px; }
+body.touch #points { font-size: 20px; }
+body.touch #points-delta { font-size: 11px; }
+body.touch #wave-bar { width: 120px; }
+body.touch .label { font-size: 8.5px; letter-spacing: .18em; }
+
+/* Health and perks tuck under the wave block, top-left. */
+body.touch #hud-bl { top: 70px; bottom: auto; left: 0; }
+body.touch #health-wrap { width: 150px; }
+body.touch #health-num { font-size: 15px; margin-top: 4px; }
+body.touch #perks { gap: 5px; margin-top: 7px; }
+body.touch .perk { width: 22px; height: 22px; font-size: 8px; }
+
+/* Points move to top-centre, clear of the pause button and the slot column. */
+body.touch #hud-tr {
+  left: 50%; right: auto; transform: translateX(-50%); text-align: center;
+}
+
+/* Ammo sits in the bottom-centre gap between the left and right clusters. */
+body.touch #hud-br {
+  left: 50%; right: auto; bottom: 1vh; transform: translateX(-50%); text-align: center;
+}
+body.touch #ammo-mag { font-size: 30px; }
+body.touch #ammo-res { font-size: 14px; }
+body.touch #weapon-name { font-size: 10px; }
+body.touch #grenades { font-size: 9px; margin-top: 4px; }
+body.touch #slots { display: none; }
+body.touch #reload-bar, body.touch #charge-bar { margin: 6px auto 0; width: 110px; }
+
+body.touch #prompt { bottom: 36vh; max-width: 300px; padding: 8px 12px; }
+body.touch #prompt .pdetail { display: none; }
+body.touch #notice-stack { bottom: 31vh; }
+body.touch #announce { top: 12%; }
+body.touch #crosshair { transform: scale(1.3); }
+body.touch #announce .big { font-size: 26px; }
+body.touch #box-spin { font-size: 18px; bottom: 40%; }
+body.touch #powerup-bar { top: auto; bottom: 1vh; left: 14%; transform: none; }
+body.touch .pu { font-size: 8.5px; padding: 3px 7px; }
+
 </style>
 </head>
 
@@ -447,6 +599,41 @@ html, body {
     <div id="charge-bar"><div id="charge-fill"></div></div>
     <div id="grenades">FRAGS ×3</div>
     <div id="slots"></div>
+  </div>
+
+
+  <!-- ------------------------------------------------- touch controls --- -->
+  <div id="touch" aria-hidden="true">
+    <div id="tc-stick-base"></div>
+    <div id="tc-stick-knob"></div>
+
+    <div class="tc-left">
+      <div class="tbtn small" data-touch="jump"  data-key="Space">JUMP</div>
+      <div class="tbtn small" data-touch="crouch" data-mode="toggle">CROUCH</div>
+      <div class="tbtn small" data-touch="light" data-key="KeyF">LIGHT</div>
+    </div>
+
+    <div class="tc-right">
+      <div class="tbtn fire" data-touch="fire" data-mouse="0" data-lookdrag="1">FIRE</div>
+      <div class="tbtn med" data-touch="ads" data-mode="toggle">AIM</div>
+      <div class="tbtn med" data-touch="reload" data-key="KeyR">RELOAD</div>
+      <div class="tbtn med" data-touch="nade" data-key="KeyG">FRAG</div>
+    </div>
+
+    <div class="tc-slots">
+      <div class="tbtn slot" data-touch="slot1" data-key="Digit1">1</div>
+      <div class="tbtn slot" data-touch="slot2" data-key="Digit2">2</div>
+      <div class="tbtn slot" data-touch="slot3" data-key="Digit3">3</div>
+      <div class="tbtn slot" data-touch="slot4" data-key="Digit4">4</div>
+    </div>
+
+    <div class="tbtn interact" data-touch="interact" data-key="KeyE">BUY</div>
+    <div class="tbtn pause" data-touch="pause">II</div>
+  </div>
+
+  <div id="rotate-hint">
+    <div class="rot-icon">⟳</div>
+    <div class="rot-text">Turn your device sideways</div>
   </div>
 
   <div id="announce"><div class="big"></div><div class="small"></div></div>
@@ -559,7 +746,7 @@ html, body {
         </div>
       </div>
 
-      <div class="setting">
+      <div class="setting mouse-only">
         <label>Sensitivity</label>
         <input type="range" id="set-sens" min="20" max="400" step="5" class="clickable">
         <div class="value" id="val-sens">100</div>
@@ -569,6 +756,28 @@ html, body {
         <label>Volume</label>
         <input type="range" id="set-vol" min="0" max="100" step="1" class="clickable">
         <div class="value" id="val-vol">70</div>
+      </div>
+
+      <div class="setting touch-only">
+        <label>Auto-fire</label>
+        <div class="seg" id="seg-autofire">
+          <button data-af="1">On</button>
+          <button data-af="0">Off</button>
+        </div>
+      </div>
+
+      <div class="setting touch-only">
+        <label>Aim assist</label>
+        <div class="seg" id="seg-assist">
+          <button data-aa="1">On</button>
+          <button data-aa="0">Off</button>
+        </div>
+      </div>
+
+      <div class="setting touch-only">
+        <label>Touch look speed</label>
+        <input type="range" id="set-tsens" min="30" max="260" step="5" class="clickable">
+        <div class="value" id="val-tsens">100</div>
       </div>
 
       <div class="setting">
@@ -614,6 +823,45 @@ html, body {
   </div>
 </div>
 
+<!--
+  Capability gate. The game needs WebGL2 and import maps; an Android device
+  with a very old System WebView has neither. Failing with a clear message
+  beats a blank black screen.
+-->
+<script>
+(function () {
+  function fail(title, detail) {
+    var t = document.getElementById('load-text');
+    var d = document.getElementById('load-tip');
+    var bar = document.getElementById('load-bar');
+    if (bar) bar.style.display = 'none';
+    if (t) { t.textContent = title; t.style.color = '#c8342a'; }
+    if (d) d.textContent = detail;
+    window.__bootBlocked = title;
+  }
+
+  var importMaps = !!(window.HTMLScriptElement && HTMLScriptElement.supports
+    && HTMLScriptElement.supports('importmap'));
+  if (!importMaps) {
+    fail('Browser too old',
+      'This game needs import map support. On Android, update "Android System WebView" '
+      + 'and Chrome from the Play Store, then reopen the app.');
+    return;
+  }
+
+  var gl = null;
+  try { gl = document.createElement('canvas').getContext('webgl2'); } catch (e) { /* none */ }
+  if (!gl) {
+    fail('WebGL2 unavailable',
+      'This device or browser cannot create a WebGL2 context. On Android, check that '
+      + 'hardware acceleration is enabled and that Android System WebView is up to date.');
+    return;
+  }
+  // Release the probe context immediately; the game creates its own.
+  var lose = gl.getExtension('WEBGL_lose_context');
+  if (lose) lose.loseContext();
+})();
+</script>
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>

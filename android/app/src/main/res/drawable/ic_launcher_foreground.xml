@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  A biohazard trefoil: three lobes around a core. Drawn as vector paths so the
+  icon needs no bitmap assets at any density.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+
+    <group android:translateX="0" android:translateY="0">
+        <!-- Three lobes at 0, 120 and 240 degrees. -->
+        <group android:pivotX="54" android:pivotY="54" android:rotation="0">
+            <path android:fillColor="#C8342A"
+                android:pathData="M54,26m-13,0a13,13 0,1 1,26 0a13,13 0,1 1,-26 0" />
+            <path android:fillColor="#C8342A" android:pathData="M48,30h12v18h-12z" />
+        </group>
+        <group android:pivotX="54" android:pivotY="54" android:rotation="120">
+            <path android:fillColor="#C8342A"
+                android:pathData="M54,26m-13,0a13,13 0,1 1,26 0a13,13 0,1 1,-26 0" />
+            <path android:fillColor="#C8342A" android:pathData="M48,30h12v18h-12z" />
+        </group>
+        <group android:pivotX="54" android:pivotY="54" android:rotation="240">
+            <path android:fillColor="#C8342A"
+                android:pathData="M54,26m-13,0a13,13 0,1 1,26 0a13,13 0,1 1,-26 0" />
+            <path android:fillColor="#C8342A" android:pathData="M48,30h12v18h-12z" />
+        </group>
+
+        <!-- Core, cut back to the background colour to separate the lobes. -->
+        <path android:fillColor="#141018"
+            android:pathData="M54,54m-12,0a12,12 0,1 1,24 0a12,12 0,1 1,-24 0" />
+        <path android:fillColor="#E8E4DC"
+            android:pathData="M54,54m-7,0a7,7 0,1 1,14 0a7,7 0,1 1,-14 0" />
+    </group>
+</vector>

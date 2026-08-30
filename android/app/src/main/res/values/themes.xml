@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      A bare fullscreen theme. The app has no Android-drawn chrome at all — the
+      WebView fills the window and the game draws everything — so the only jobs
+      here are to start black (no white flash before the first frame) and to
+      keep the system bars out of the way.
+    -->
+    <style name="Theme.NightOfTheRisen" parent="@android:style/Theme.Black.NoTitleBar.Fullscreen">
+        <item name="android:windowBackground">@color/night</item>
+        <item name="android:colorBackground">@color/night</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
+</resources>
