@@ -12,7 +12,8 @@
     "test": "node tools/units.mjs",
     "touch": "node tools/touchtest.mjs",
     "apk": "cd android && ./gradlew assembleDebug",
-    "verify:apk": "node tools/verify-apk.mjs"
+    "verify:apk": "node tools/verify-apk.mjs",
+    "models": "node tools/smoke.mjs --page tools/modelpreview.html --viewport 1280x420 --shot models.png"
   },
   "engines": {
     "node": ">=18"

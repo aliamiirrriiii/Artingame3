@@ -396,6 +396,13 @@ html, body {
 }
 #lowfps.show { display: block; }
 
+#credits-body { max-height: 46vh; overflow-y: auto; padding-right: 8px; }
+#credits-body .lic { color: var(--ink); font-family: var(--mono); font-size: 11.5px;
+  letter-spacing: .04em; margin-top: 14px; }
+#credits-body .lic:first-child { margin-top: 0; }
+#credits-body .files { color: var(--dim); font-size: 11px; margin-top: 3px; line-height: 1.55; }
+#credits-body .engine { color: var(--dim); font-size: 12px; margin-bottom: 4px; }
+
 /* Rows that only make sense with a touchscreen. */
 .touch-only { display: none; }
 body.touch .touch-only { display: flex; }
@@ -668,6 +675,7 @@ body.touch .pu { font-size: 8.5px; padding: 3px 7px; }
           <button class="btn primary clickable" id="btn-play">Enter the precinct <span class="hint">Click</span></button>
           <button class="btn clickable" id="btn-settings">Settings</button>
           <button class="btn clickable" id="btn-howto">How to survive</button>
+        <button class="btn clickable" id="btn-credits">Credits</button>
           <div class="label" style="margin-top:20px">Best run</div>
           <div style="font-family:var(--mono);font-size:26px;font-weight:700;margin-top:4px" id="best-run">—</div>
         </div>
@@ -710,6 +718,18 @@ body.touch .pu { font-size: 8.5px; padding: 3px 7px; }
       </div>
       <div class="rule"></div>
       <button class="btn clickable" id="btn-howto-back">Back</button>
+    </div>
+  </div>
+
+  <!-- ------------------------------------------------------- credits --- -->
+  <div class="screen" id="credits">
+    <div class="panel">
+      <div class="title" style="font-size:clamp(28px,4vw,44px)">Credits</div>
+      <div class="tagline">Built on freely licensed work</div>
+      <div class="rule"></div>
+      <div id="credits-body" class="controls-list" style="line-height:1.7"></div>
+      <div class="rule"></div>
+      <button class="btn clickable" id="btn-credits-back">Back</button>
     </div>
   </div>
 

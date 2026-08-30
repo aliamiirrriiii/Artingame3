@@ -1,46 +1,219 @@
 {
   "note": "Every runtime asset used by NIGHT OF THE RISEN is downloaded from the web by tools/fetch-assets.mjs. Sources are permissively licensed (three.js examples asset pool: MIT / CC0 / CC-BY as noted per entry).",
   "bases": {
-    "three": "https://raw.githubusercontent.com/mrdoob/three.js/r180/examples"
+    "three": "https://raw.githubusercontent.com/mrdoob/three.js/r180/examples",
+    "khronos": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models"
   },
   "assets": [
-    { "src": "three:models/gltf/Soldier.glb", "dst": "assets/models/soldier.glb", "license": "CC0 (three.js example asset)", "use": "Primary skinned humanoid base for zombie archetypes (idle/walk/run clips)" },
-    { "src": "three:models/gltf/Xbot.glb", "dst": "assets/models/xbot.glb", "license": "CC0 (three.js example asset)", "use": "Second skinned humanoid base — runner/crawler silhouette variety" },
-
-    { "src": "three:textures/equirectangular/moonless_golf_1k.hdr", "dst": "assets/hdri/moonless_night_1k.hdr", "license": "CC0 — Poly Haven", "use": "Primary night image-based lighting + sky" },
-    { "src": "three:textures/equirectangular/venice_sunset_1k.hdr", "dst": "assets/hdri/blood_dusk_1k.hdr", "license": "CC0 — Poly Haven", "use": "Boss-wave 'blood moon' environment lighting" },
-    { "src": "three:textures/equirectangular/quarry_01_1k.hdr", "dst": "assets/hdri/overcast_1k.hdr", "license": "CC0 — Poly Haven", "use": "Menu / high-key preview lighting" },
-
-    { "src": "three:textures/brick_diffuse.jpg", "dst": "assets/textures/brick_albedo.jpg", "license": "MIT (three.js)", "use": "Building facade PBR albedo" },
-    { "src": "three:textures/brick_bump.jpg", "dst": "assets/textures/brick_bump.jpg", "license": "MIT (three.js)", "use": "Building facade height -> normal" },
-    { "src": "three:textures/brick_roughness.jpg", "dst": "assets/textures/brick_rough.jpg", "license": "MIT (three.js)", "use": "Building facade roughness" },
-
-    { "src": "three:textures/hardwood2_diffuse.jpg", "dst": "assets/textures/wood_albedo.jpg", "license": "MIT (three.js)", "use": "Boarded windows, crates, barricades" },
-    { "src": "three:textures/hardwood2_bump.jpg", "dst": "assets/textures/wood_bump.jpg", "license": "MIT (three.js)", "use": "Wood height -> normal" },
-    { "src": "three:textures/hardwood2_roughness.jpg", "dst": "assets/textures/wood_rough.jpg", "license": "MIT (three.js)", "use": "Wood roughness" },
-
-    { "src": "three:textures/floors/FloorsCheckerboard_S_Diffuse.jpg", "dst": "assets/textures/tile_albedo.jpg", "license": "MIT (three.js)", "use": "Interior tiled floor" },
-    { "src": "three:textures/floors/FloorsCheckerboard_S_Normal.jpg", "dst": "assets/textures/tile_normal.jpg", "license": "MIT (three.js)", "use": "Interior tiled floor normal" },
-
-    { "src": "three:textures/carbon/Carbon.png", "dst": "assets/textures/carbon_albedo.png", "license": "MIT (three.js)", "use": "Weapon grips / composite gun furniture" },
-    { "src": "three:textures/carbon/Carbon_Normal.png", "dst": "assets/textures/carbon_normal.png", "license": "MIT (three.js)", "use": "Weapon grip micro-normal" },
-
-    { "src": "three:textures/disturb.jpg", "dst": "assets/textures/grunge.jpg", "license": "MIT (three.js)", "use": "Grime overlay / detail breakup on roads and walls" },
-    { "src": "three:textures/roughness_map.jpg", "dst": "assets/textures/rough_detail.jpg", "license": "MIT (three.js)", "use": "Roughness breakup for metal and asphalt" },
-    { "src": "three:textures/noises/perlin/rgb-256x256.png", "dst": "assets/textures/perlin.png", "license": "MIT (three.js)", "use": "Fog/dissolve/rot noise sampled in shaders" },
-    { "src": "three:textures/water/Water_1_M_Normal.jpg", "dst": "assets/textures/wet_normal.jpg", "license": "MIT (three.js)", "use": "Rain puddle + wet asphalt normal" },
-    { "src": "three:textures/terrain/grasslight-big.jpg", "dst": "assets/textures/grass_albedo.jpg", "license": "MIT (three.js)", "use": "Overgrown lots between buildings" },
-    { "src": "three:textures/lava/lavatile.jpg", "dst": "assets/textures/ember.jpg", "license": "MIT (three.js)", "use": "Burning barrel / flamethrower emissive ramp" },
-    { "src": "three:textures/planets/moon_1024.jpg", "dst": "assets/textures/moon.jpg", "license": "MIT (three.js)", "use": "Moon billboard in the night sky" },
-
-    { "src": "three:textures/decal/decal-diffuse.png", "dst": "assets/textures/decal_albedo.png", "license": "MIT (three.js)", "use": "Bullet impact decal" },
-    { "src": "three:textures/decal/decal-normal.jpg", "dst": "assets/textures/decal_normal.jpg", "license": "MIT (three.js)", "use": "Bullet impact decal normal" },
-
-    { "src": "three:textures/sprites/spark1.png", "dst": "assets/textures/spark.png", "license": "MIT (three.js)", "use": "Muzzle flash, sparks, ember particles" },
-    { "src": "three:textures/sprites/circle.png", "dst": "assets/textures/soft_circle.png", "license": "MIT (three.js)", "use": "Blood droplets, smoke puffs, light glow" },
-    { "src": "three:textures/sprites/disc.png", "dst": "assets/textures/disc.png", "license": "MIT (three.js)", "use": "Blood pool decals, ground splatter" },
-    { "src": "three:textures/sprites/snowflake1.png", "dst": "assets/textures/dust.png", "license": "MIT (three.js)", "use": "Floating dust motes / ash" },
-
-    { "src": "three:sounds/Project_Utopia.ogg", "dst": "assets/sounds/ambience.ogg", "license": "CC-BY (three.js example asset)", "use": "Low ambient drone bed under procedural audio" }
+    {
+      "src": "three:models/gltf/Soldier.glb",
+      "dst": "assets/models/soldier.glb",
+      "license": "CC0 (three.js example asset)",
+      "use": "Primary skinned humanoid base for zombie archetypes (idle/walk/run clips)"
+    },
+    {
+      "src": "three:models/gltf/Xbot.glb",
+      "dst": "assets/models/xbot.glb",
+      "license": "CC0 (three.js example asset)",
+      "use": "Second skinned humanoid base — runner/crawler silhouette variety"
+    },
+    {
+      "src": "khronos:Lantern/glTF-Binary/Lantern.glb",
+      "dst": "assets/models/lantern.glb",
+      "license": "CC0 — (c) 2017 Microsoft; (c) 2018 Frank Galligan (Khronos glTF Sample Assets)",
+      "use": "Street lamp posts. Replaces the procedural pole-and-box streetlights."
+    },
+    {
+      "src": "khronos:GlassBrokenWindow/glTF-Binary/GlassBrokenWindow.glb",
+      "dst": "assets/models/broken_window.glb",
+      "license": "CC-BY 4.0 — (c) 2023 Wayfair (Khronos glTF Sample Assets)",
+      "use": "Smashed street-level windows on the corner blocks."
+    },
+    {
+      "src": "khronos:TrafficCone/glTF/TrafficCone.gltf",
+      "dst": "assets/models/trafficcone/TrafficCone.gltf",
+      "license": "CC-BY 4.0 — (c) 2024 hinndia (Khronos glTF Sample Assets)",
+      "use": "Street clutter around the barricades. Only the ConeMesh node is used; the asset also ships a demo ground plane, camera and light."
+    },
+    {
+      "src": "khronos:TrafficCone/glTF/TrafficCone.bin",
+      "dst": "assets/models/trafficcone/TrafficCone.bin",
+      "license": "CC-BY 4.0 — (c) 2024 hinndia",
+      "use": "Traffic cone geometry buffer."
+    },
+    {
+      "src": "khronos:TrafficCone/glTF/ConeBaseMat_baseColor.png",
+      "dst": "assets/models/trafficcone/ConeBaseMat_baseColor.png",
+      "license": "CC-BY 4.0 — (c) 2024 hinndia",
+      "use": "Traffic cone albedo."
+    },
+    {
+      "src": "khronos:TrafficCone/glTF/ConeBaseMat_metallicRoughness.png",
+      "dst": "assets/models/trafficcone/ConeBaseMat_metallicRoughness.png",
+      "license": "CC-BY 4.0 — (c) 2024 hinndia",
+      "use": "Traffic cone metallic-roughness."
+    },
+    {
+      "src": "three:textures/equirectangular/moonless_golf_1k.hdr",
+      "dst": "assets/hdri/moonless_night_1k.hdr",
+      "license": "CC0 — Poly Haven",
+      "use": "Primary night image-based lighting + sky"
+    },
+    {
+      "src": "three:textures/equirectangular/venice_sunset_1k.hdr",
+      "dst": "assets/hdri/blood_dusk_1k.hdr",
+      "license": "CC0 — Poly Haven",
+      "use": "Boss-wave 'blood moon' environment lighting"
+    },
+    {
+      "src": "three:textures/equirectangular/quarry_01_1k.hdr",
+      "dst": "assets/hdri/overcast_1k.hdr",
+      "license": "CC0 — Poly Haven",
+      "use": "Menu / high-key preview lighting"
+    },
+    {
+      "src": "three:textures/brick_diffuse.jpg",
+      "dst": "assets/textures/brick_albedo.jpg",
+      "license": "MIT (three.js)",
+      "use": "Building facade PBR albedo"
+    },
+    {
+      "src": "three:textures/brick_bump.jpg",
+      "dst": "assets/textures/brick_bump.jpg",
+      "license": "MIT (three.js)",
+      "use": "Building facade height -> normal"
+    },
+    {
+      "src": "three:textures/brick_roughness.jpg",
+      "dst": "assets/textures/brick_rough.jpg",
+      "license": "MIT (three.js)",
+      "use": "Building facade roughness"
+    },
+    {
+      "src": "three:textures/hardwood2_diffuse.jpg",
+      "dst": "assets/textures/wood_albedo.jpg",
+      "license": "MIT (three.js)",
+      "use": "Boarded windows, crates, barricades"
+    },
+    {
+      "src": "three:textures/hardwood2_bump.jpg",
+      "dst": "assets/textures/wood_bump.jpg",
+      "license": "MIT (three.js)",
+      "use": "Wood height -> normal"
+    },
+    {
+      "src": "three:textures/hardwood2_roughness.jpg",
+      "dst": "assets/textures/wood_rough.jpg",
+      "license": "MIT (three.js)",
+      "use": "Wood roughness"
+    },
+    {
+      "src": "three:textures/floors/FloorsCheckerboard_S_Diffuse.jpg",
+      "dst": "assets/textures/tile_albedo.jpg",
+      "license": "MIT (three.js)",
+      "use": "Interior tiled floor"
+    },
+    {
+      "src": "three:textures/floors/FloorsCheckerboard_S_Normal.jpg",
+      "dst": "assets/textures/tile_normal.jpg",
+      "license": "MIT (three.js)",
+      "use": "Interior tiled floor normal"
+    },
+    {
+      "src": "three:textures/carbon/Carbon.png",
+      "dst": "assets/textures/carbon_albedo.png",
+      "license": "MIT (three.js)",
+      "use": "Weapon grips / composite gun furniture"
+    },
+    {
+      "src": "three:textures/carbon/Carbon_Normal.png",
+      "dst": "assets/textures/carbon_normal.png",
+      "license": "MIT (three.js)",
+      "use": "Weapon grip micro-normal"
+    },
+    {
+      "src": "three:textures/disturb.jpg",
+      "dst": "assets/textures/grunge.jpg",
+      "license": "MIT (three.js)",
+      "use": "Grime overlay / detail breakup on roads and walls"
+    },
+    {
+      "src": "three:textures/roughness_map.jpg",
+      "dst": "assets/textures/rough_detail.jpg",
+      "license": "MIT (three.js)",
+      "use": "Roughness breakup for metal and asphalt"
+    },
+    {
+      "src": "three:textures/noises/perlin/rgb-256x256.png",
+      "dst": "assets/textures/perlin.png",
+      "license": "MIT (three.js)",
+      "use": "Fog/dissolve/rot noise sampled in shaders"
+    },
+    {
+      "src": "three:textures/water/Water_1_M_Normal.jpg",
+      "dst": "assets/textures/wet_normal.jpg",
+      "license": "MIT (three.js)",
+      "use": "Rain puddle + wet asphalt normal"
+    },
+    {
+      "src": "three:textures/terrain/grasslight-big.jpg",
+      "dst": "assets/textures/grass_albedo.jpg",
+      "license": "MIT (three.js)",
+      "use": "Overgrown lots between buildings"
+    },
+    {
+      "src": "three:textures/lava/lavatile.jpg",
+      "dst": "assets/textures/ember.jpg",
+      "license": "MIT (three.js)",
+      "use": "Burning barrel / flamethrower emissive ramp"
+    },
+    {
+      "src": "three:textures/planets/moon_1024.jpg",
+      "dst": "assets/textures/moon.jpg",
+      "license": "MIT (three.js)",
+      "use": "Moon billboard in the night sky"
+    },
+    {
+      "src": "three:textures/decal/decal-diffuse.png",
+      "dst": "assets/textures/decal_albedo.png",
+      "license": "MIT (three.js)",
+      "use": "Bullet impact decal"
+    },
+    {
+      "src": "three:textures/decal/decal-normal.jpg",
+      "dst": "assets/textures/decal_normal.jpg",
+      "license": "MIT (three.js)",
+      "use": "Bullet impact decal normal"
+    },
+    {
+      "src": "three:textures/sprites/spark1.png",
+      "dst": "assets/textures/spark.png",
+      "license": "MIT (three.js)",
+      "use": "Muzzle flash, sparks, ember particles"
+    },
+    {
+      "src": "three:textures/sprites/circle.png",
+      "dst": "assets/textures/soft_circle.png",
+      "license": "MIT (three.js)",
+      "use": "Blood droplets, smoke puffs, light glow"
+    },
+    {
+      "src": "three:textures/sprites/disc.png",
+      "dst": "assets/textures/disc.png",
+      "license": "MIT (three.js)",
+      "use": "Blood pool decals, ground splatter"
+    },
+    {
+      "src": "three:textures/sprites/snowflake1.png",
+      "dst": "assets/textures/dust.png",
+      "license": "MIT (three.js)",
+      "use": "Floating dust motes / ash"
+    },
+    {
+      "src": "three:sounds/Project_Utopia.ogg",
+      "dst": "assets/sounds/ambience.ogg",
+      "license": "CC-BY (three.js example asset)",
+      "use": "Low ambient drone bed under procedural audio"
+    }
   ]
 }

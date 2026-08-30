@@ -34,6 +34,7 @@ The target is **60 fps**, with a hard floor of 30 held by an adaptive scaler.
 | | |
 |---|---|
 | Static level | ~12 draw calls (all geometry merged per material) |
+| Downloaded props | 1 instanced draw call per material, whatever the count |
 | Effects layer | ~6 draw calls regardless of activity |
 | Zombie eyes | 1 draw call for the entire horde |
 | Steady-state allocation | zero — everything hot is pooled |
@@ -167,7 +168,58 @@ On a touchscreen the game switches to on-screen controls automatically — see
 Every runtime asset is **downloaded from the web** by `tools/fetch-assets.mjs`,
 which reads `tools/assets.manifest.json` — 29 files, ~19 MB, each entry
 recording its source, licence and what it is used for. Sources are the three.js
-example asset pool (MIT) and Poly Haven HDRIs (CC0).
+example asset pool (MIT), Poly Haven HDRIs (CC0) and the Khronos glTF Sample
+Assets (CC0 / CC-BY 4.0).
+
+Some assets are CC-BY, which obliges us to credit them where players can see
+it, so the downloader also generates `assets/credits.json` from the manifest and
+the game renders it on a **Credits** screen. Generating it means the credits
+cannot drift as assets are added or swapped — and the touch test asserts the
+CC-BY holders actually appear on screen.
+
+### Models
+
+The props are real glTF assets, not boxes:
+
+| | |
+|---|---|
+| **Street lamps** | Khronos "old wooden street light" — 5,394 tris, one material across its three meshes with base colour, normal, metallic-roughness **and emissive** maps, so the lantern glass genuinely glows. CC0. |
+| **Smashed windows** | Ground-floor windows on the plaza-facing walls, with alpha-masked shatter holes. CC-BY, Wayfair. |
+| **Traffic cones** | Clustered at the barricades, some knocked over. CC-BY, hinndia. |
+
+Every one is drawn with `InstancedMesh`: fourteen lamp posts are **one draw
+call**, not fourteen.
+
+Getting them to fit took more than downloading them. `PropLibrary.prepare()`
+pulls out only the nodes that are the object (the traffic cone ships inside a
+demo scene with a 19.7 m ground plane, a camera and a light), bakes each mesh's
+transform into its geometry, normalises the result to a real-world height with
+its base on the ground, and hands the materials to a per-asset tweak — because
+these are authored for daylight product viewers. The cone's retroreflective
+orange read as a glowing plastic toy under moonlight until its albedo was
+knocked down; the window frame arrived showroom white and had to be made
+filthy; the window glass had its `KHR_materials_transmission` stripped, since
+transmission needs its own render pass and at night the difference is invisible.
+
+The lamp's light is placed at the lantern's **own bulb**, read out of the model
+as a marker node, rather than guessed from an offset.
+
+**What was rejected, and why.** Twelve candidates were evaluated by rendering
+them (`tools/modelpreview.html`), which is the only way to catch what a triangle
+count will not tell you:
+
+- **PotOfCoals** — would have been a perfect brazier, but it carries a large
+  glTF logo across its side. That is Khronos trademark material, not something
+  to ship in a game.
+- **CarConcept** (213k tris), **CommercialRefrigerator** (208k), **ScatteringSkull**
+  (188k) — absurd cost for background props, and all three use expensive
+  transmission/dispersion extensions.
+- **BoomBox**, **DamagedHelmet**, **AnisotropyBarnLamp** — pristine
+  product-visualisation pieces. Art-direction coherence beats polygon count; a
+  spotless designer lamp in a ruined precinct looks *worse*, not more real.
+- **Sponza** — 262k tris of palace interior, the wrong arena for a city block.
+  Its material library was tested for reuse, but only one of its 25 textures
+  actually tiles, so it would have seamed across a 90 m street.
 
 Downloaded assets are combined and extended at load time rather than used raw:
 

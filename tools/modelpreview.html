@@ -1,0 +1,118 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>model preview</title><link rel="icon" href="data:,">
+<style>html,body{margin:0;height:100%;background:#15171c;overflow:hidden}canvas{display:block;width:100%;height:100%}</style>
+<script type="importmap">{"imports":{"three":"../vendor/three/build/three.module.js","three/addons/":"../vendor/three/examples/jsm/"}}</script>
+</head><body><canvas id="c"></canvas>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
+
+const report = { errors: [], models: [] };
+window.__smoke = report;
+addEventListener('error', e => report.errors.push('window: ' + e.message));
+addEventListener('unhandledrejection', e => report.errors.push('reject: ' + (e.reason?.message || e.reason)));
+
+/**
+ * Renders the game's prop models side by side, normalised to the same height.
+ *
+ * This exists because a triangle count tells you nothing about whether an asset
+ * belongs in the game. Looking at them is what caught a brazier with a vendor
+ * logo across its side, and a traffic cone that ships inside a demo scene with
+ * a 19.7 m ground plane.
+ *
+ * `keep` selects specific nodes for assets wrapped in such a scene.
+ * Pass ?url=<path>&keep=<node,node> to preview any other model.
+ */
+const q = new URLSearchParams(location.search);
+const MODELS = q.get('url')
+  ? [{ name: q.get('url').split('/').pop(), url: '../' + q.get('url'),
+       keep: q.get('keep') ? q.get('keep').split(',') : null }]
+  : [
+      { name: 'Lantern',      url: '../assets/models/lantern.glb' },
+      { name: 'BrokenWindow', url: '../assets/models/broken_window.glb' },
+      { name: 'TrafficCone',  url: '../assets/models/trafficcone/TrafficCone.gltf',
+        keep: ['Cone Normal'] },
+      { name: 'Soldier',      url: '../assets/models/soldier.glb' },
+    ];
+
+(async () => {
+try {
+  const canvas = document.getElementById('c');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setSize(1280, 420, false);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.1;
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x15171c);
+
+  // Studio-ish lighting so shape and material read clearly.
+  const hdr = await new HDRLoader().loadAsync('../assets/hdri/overcast_1k.hdr').catch(() => null);
+  if (hdr) {
+    hdr.mapping = THREE.EquirectangularReflectionMapping;
+    const pm = new THREE.PMREMGenerator(renderer);
+    scene.environment = pm.fromEquirectangular(hdr).texture;
+    scene.environmentIntensity = 1.4;
+  }
+  scene.add(new THREE.DirectionalLight(0xffffff, 2.2).translateY(3));
+  scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+
+  const camera = new THREE.PerspectiveCamera(35, 1280 / 420, 0.01, 1000);
+
+  const loader = new GLTFLoader();
+  const SLOT = 3;            // metres of space per model
+  let i = 0;
+  for (const m of MODELS) {
+    try {
+      const g = await loader.loadAsync(m.url);
+      let root = g.scene;
+      if (m.keep) {
+        const picked = new THREE.Group();
+        for (const name of m.keep) {
+          const n = root.getObjectByName(name);
+          if (n) picked.add(n);
+        }
+        if (picked.children.length) root = picked;
+      }
+      // Normalise every model to the same on-screen height so they can be
+      // compared, and record the true size for scaling them in the game.
+      const box = new THREE.Box3().setFromObject(root);
+      const size = new THREE.Vector3(); box.getSize(size);
+      const center = new THREE.Vector3(); box.getCenter(center);
+      const s = 2.0 / Math.max(size.x, size.y, size.z);
+      root.scale.setScalar(s);
+      root.position.set(i * SLOT - (MODELS.length - 1) * SLOT / 2, -center.y * s + 1.0, -center.z * s);
+      root.position.x -= center.x * s;
+      scene.add(root);
+
+      let tris = 0;
+      root.traverse((o) => { if (o.isMesh && o.geometry.index) tris += o.geometry.index.count / 3; });
+      report.models.push({
+        name: m.name, ok: true,
+        size: [size.x, size.y, size.z].map(v => +v.toFixed(3)),
+        tris: Math.round(tris),
+      });
+    } catch (e) {
+      report.models.push({ name: m.name, ok: false, error: String(e.message || e) });
+    }
+    i++;
+  }
+
+  camera.position.set(0, 1.4, 8.2);
+  camera.lookAt(0, 1.0, 0);
+
+  let t = 0, frames = 0;
+  const loop = () => {
+    t += 0.016; frames++;
+    // Slow turntable so the screenshot catches a readable angle.
+    scene.traverse(o => { if (o.parent === scene && o.type === 'Group') o.rotation.y = 0.6; });
+    renderer.render(scene, camera);
+    if (frames === 8) { report.ok = report.errors.length === 0; report.done = true; }
+    requestAnimationFrame(loop);
+  };
+  loop();
+} catch (e) { report.errors.push('fatal: ' + (e && e.stack || e)); report.done = true; report.ok = false; }
+})();
+</script></body></html>

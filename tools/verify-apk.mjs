@@ -69,6 +69,9 @@ const CODE = [
   'vendor/three/examples/jsm/loaders/GLTFLoader.js',
   'vendor/three/examples/jsm/postprocessing/EffectComposer.js',
   'vendor/three/examples/jsm/utils/SkeletonUtils.js',
+  'src/world/props.js',
+  'src/core/touch.js',
+  'assets/credits.json',
 ];
 for (const f of CODE) if (need(W + f)) codeOk++;
 console.log(`  ${codeOk}/${CODE.length} present`);

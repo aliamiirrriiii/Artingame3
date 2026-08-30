@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Box, CollisionWorld, FlowField } from './collision.js';
+import { PropLibrary } from './props.js';
 import { RNG, clamp, TAU } from '../core/util.js';
 
 /**
@@ -49,6 +50,10 @@ export class Level {
 
     this._lightPool = [];
     this._flickerT = 0;
+
+    // Downloaded glTF props, drawn instanced.
+    this.props = new PropLibrary(scene, assets, preset);
+    this.windowPlacements = [];
   }
 
   // ------------------------------------------------------------- batching
@@ -121,6 +126,7 @@ export class Level {
     this._buildSpawnPoints();
     this._buildStations();
     this._finalize();
+    this._buildBrokenWindows();
     this._buildLightPools();
 
     this.flow.bake(this.collision, 0.5, 0.55);
@@ -227,10 +233,22 @@ export class Level {
           const t = (i + 0.5) / count - 0.5;
           const px = x + nx * (w / 2 + 0.06) + (nx === 0 ? t * ww : 0);
           const pz = z + nz * (d / 2 + 0.06) + (nz === 0 ? t * ww : 0);
-          const g = new THREE.PlaneGeometry(1.5, 1.9);
-          g.rotateY(Math.atan2(nx, nz));
-          g.translate(px, wy, pz);
-          (r.next() < 0.18 ? glassBatch : darkBatch).push(g);
+          // Ground floor, facing the plaza: use the real smashed-window model.
+          // Everything above stays a cheap quad — you never get close enough
+          // to tell, and there are hundreds of them.
+          const towardPlaza = (nx !== 0 && Math.sign(nx) !== Math.sign(x))
+            || (nz !== 0 && Math.sign(nz) !== Math.sign(z));
+          if (f === 0 && towardPlaza && r.next() < 0.65) {
+            this.windowPlacements.push({
+              x: px + nx * 0.06, y: wy - 0.78, z: pz + nz * 0.06,
+              rotY: Math.atan2(nx, nz),
+            });
+          } else {
+            const g = new THREE.PlaneGeometry(1.5, 1.9);
+            g.rotateY(Math.atan2(nx, nz));
+            g.translate(px, wy, pz);
+            (r.next() < 0.18 ? glassBatch : darkBatch).push(g);
+          }
 
           if (r.next() < 0.18) {
             this.fixtures.push({
@@ -315,20 +333,44 @@ export class Level {
   _buildStreetProps() {
     const r = this.rng;
 
-    // Streetlights down both spokes. Their pools of light are the only places
-    // you can see a zombie coming before it is on top of you.
+    // Street lamps. These are the downloaded "old wooden street light" model
+    // rather than a procedural pole: one material across its three meshes, so
+    // every lamp on the map is a single instanced draw call. The light itself
+    // is placed at the lantern's own bulb, read out of the model, instead of
+    // being guessed from an offset.
+    const lamp = this.props.prepare('lantern', {
+      targetHeight: 6.6,
+      markers: { bulb: 'LanternPole_Lantern' },
+      material: (mat) => {
+        // Authored for daylight product shots; lift the emissive so the glass
+        // reads as a lit lamp at night.
+        mat.emissiveIntensity = 2.6;
+        mat.envMapIntensity = 0.8;
+        return null;
+      },
+    });
+
+    const lampPlacements = [];
+    const bulb = new THREE.Vector3();
     for (const [lx, lz, rot] of STREETLIGHTS) {
-      this.cylinder('steel', lx, 0, lz, 0.11, 0.15, 6.2, { seg: 8, collide: true, tag: 'cover' });
-      this.box('steel', lx + Math.cos(rot) * 0.9, 6.1, lz + Math.sin(rot) * 0.9, 1.9, 0.14, 0.14,
-        { rotY: rot, collide: false });
-      const hx = lx + Math.cos(rot) * 1.7, hz = lz + Math.sin(rot) * 1.7;
-      this.box('lampGlass', hx, 5.85, hz, 0.7, 0.22, 0.42, { rotY: rot, collide: false });
+      const place = { x: lx, y: 0, z: lz, rotY: rot };
+      lampPlacements.push(place);
+
+      // The post is what you collide with, not the whole lamp.
+      this.collision.add(new Box(lx, 0, lz, 0.16, 0.16, 6.2, 0, 'cover'));
+
+      if (lamp) this.props.markerWorld(lamp, 'bulb', place, bulb);
+      else bulb.set(lx + Math.cos(rot) * 1.7, 5.7, lz + Math.sin(rot) * 1.7);
+
       this.fixtures.push({
-        pos: new THREE.Vector3(hx, 5.7, hz),
+        pos: bulb.clone(),
         color: 0xffd9a0, intensity: 50, range: 24, flicker: r.next() < 0.35 ? 0.5 : 0.06,
         kind: 'street',
       });
     }
+    if (lamp) this.props.place(lamp, lampPlacements, { name: 'lantern' });
+
+    this._buildCones();
 
     // Burning barrels: warmth, landmarks, and 260 damage when shot.
     for (const [bx, bz] of BARRELS) {
@@ -380,6 +422,105 @@ export class Level {
       }
       this.collision.add(new Box(fx, 0, fz, len / 2, 0.12, 2.1, rot, 'cover'));
     }
+  }
+
+  /**
+   * Traffic cones around the barricades and along the spokes. The asset ships
+   * inside a demo scene, so only the cone node is taken; the rest is a 19.7 m
+   * ground plane, a camera and a light.
+   */
+  _buildCones() {
+    const cone = this.props.prepare('trafficCone', {
+      include: ['Cone Normal'],
+      targetHeight: 0.72,
+      material: (mat) => {
+        // Authored as a bright retroreflective cone for daylight product shots.
+        // Under moonlight that reads as a glowing plastic toy, so knock the
+        // albedo down and rough it up; it still lights up under the flashlight,
+        // which is when you actually want to see it.
+        mat.color = new THREE.Color(0x6a6a6a);
+        mat.envMapIntensity = 0.35;
+        mat.roughness = Math.min(1, (mat.roughness ?? 0.6) + 0.25);
+        mat.metalness = 0;
+        return null;
+      },
+    });
+    if (!cone) return;
+
+    const r = this.rng;
+    const places = [];
+    // Clustered at the barricades, where a road closure would actually be.
+    for (const [bx, bz, rot] of BARRICADES) {
+      const n = this.preset.mobile ? 2 : 3;
+      for (let i = 0; i < n; i++) {
+        const t = (i - (n - 1) / 2) * 1.9;
+        places.push({
+          x: bx + Math.cos(rot + Math.PI / 2) * t + r.range(-0.3, 0.3),
+          z: bz + Math.sin(rot + Math.PI / 2) * t + r.range(-0.3, 0.3),
+          rotY: r.range(0, TAU),
+          // A few have been knocked over.
+          tiltX: r.next() < 0.25 ? r.range(0.9, 1.5) : r.range(-0.05, 0.05),
+        });
+      }
+    }
+    // A scatter of strays, none of them blocking the ring road.
+    const strays = this.preset.mobile ? 3 : 6;
+    for (let i = 0; i < strays; i++) {
+      const a = r.range(0, TAU), rad = r.range(16, 44);
+      const x = Math.cos(a) * rad, z = Math.sin(a) * rad;
+      if (this._occupied(x, z, 1.0)) continue;
+      places.push({
+        x, z, rotY: r.range(0, TAU),
+        tiltX: r.next() < 0.4 ? r.range(0.9, 1.6) : 0,
+      });
+    }
+    // Small enough that its shadow is invisible, and shadow casting would
+    // triple its cost across the moon and flashlight depth passes.
+    this.props.place(cone, places, { name: 'cone', castShadow: false, receiveShadow: true });
+  }
+
+  /**
+   * Smashed street-level windows. Only the ground floor gets them — that is
+   * the only storey the player is ever close enough to read — and only a
+   * capped number, because each one is a separate piece of geometry rather
+   * than a flat emissive quad.
+   */
+  _buildBrokenWindows() {
+    if (!this.windowPlacements.length) return;
+    const win = this.props.prepare('brokenWindow', {
+      targetHeight: 1.55,
+      merge: false,
+      material: (mat, name) => {
+        if (name === 'WindowFrame') {
+          // Showroom white, straight out of a furniture catalogue.
+          mat.color.setHex(0x4a453c);
+          mat.roughness = 0.88;
+          mat.metalness = 0.0;
+          mat.envMapIntensity = 0.5;
+        } else if (name === 'WindowGlass') {
+          // Transmission needs its own render pass; far too expensive for
+          // dozens of windows, and at night the difference is invisible.
+          mat.transmission = 0;
+          mat.thickness = 0;
+          // Dark and only sharply reflective: at night a pane reads as almost
+          // black with a hard glint, not as a lit panel.
+          mat.roughness = 0.18;
+          mat.metalness = 0;
+          mat.color.setHex(0x2b3740);
+          mat.envMapIntensity = 0.9;
+          mat.side = THREE.DoubleSide;
+        } else if (name === 'WindowClasp') {
+          mat.color.setHex(0x2a241c);
+          mat.roughness = 0.7;
+        }
+        return null;
+      },
+    });
+    if (!win) return;
+
+    const cap = this.preset.mobile ? 16 : 40;
+    const list = this.windowPlacements.slice(0, cap);
+    this.props.place(win, list, { name: 'window', castShadow: false });
   }
 
   _occupied(x, z, pad) {
@@ -715,6 +856,7 @@ export class Level {
   }
 
   dispose() {
+    this.props.dispose();
     for (const m of this.meshes) { m.geometry.dispose(); }
     this.scene.remove(this.root);
     for (const e of this._lightPool) { this.scene.remove(e.light); e.light.dispose(); }

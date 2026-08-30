@@ -84,6 +84,23 @@ try {
   check('mobile quality caps applied', r.preset !== undefined, `preset=${r.preset}`);
   check('body carries the touch class', /\btouch\b/.test(r.bodyClass), r.bodyClass);
 
+  console.log('\ncredits (CC-BY attribution must actually render)');
+  const credBtn = await page.locator('#btn-credits').boundingBox();
+  await page.touchscreen.tap(credBtn.x + credBtn.width / 2, credBtn.y + credBtn.height / 2);
+  await sleep(700);
+  const cred = await page.evaluate(() => {
+    const b = document.getElementById('credits-body');
+    return { shown: document.getElementById('credits').classList.contains('show'),
+             licences: b.querySelectorAll('.lic').length, text: b.textContent.slice(0, 80) };
+  });
+  check('credits screen opens', cred.shown === true);
+  check('credits list every licence', cred.licences >= 6, `found ${cred.licences}`);
+  check('credits name the CC-BY holders',
+    /Wayfair|hinndia/.test(await page.evaluate(() => document.getElementById('credits-body').textContent)));
+  const backBtn = await page.locator('#btn-credits-back').boundingBox();
+  await page.touchscreen.tap(backBtn.x + backBtn.width / 2, backBtn.y + backBtn.height / 2);
+  await sleep(400);
+
   console.log('\nstarting a run');
   const playBox = await page.locator('#btn-play').boundingBox();
   await page.touchscreen.tap(playBox.x + playBox.width / 2, playBox.y + playBox.height / 2);
@@ -154,6 +171,20 @@ try {
   check('CROUCH untoggles', (await page.evaluate(() => window.__game.player.crouching)) === false);
 
   console.log('\ntwo thumbs at once');
+  // Put the player somewhere known and open first. By this point the earlier
+  // steps have walked and turned it, and if it happens to end up nose-first
+  // against a wall this measures the level layout rather than the input code.
+  const stuckAt = await report();
+  await page.evaluate(() => {
+    const g = window.__game;
+    g.player.pos.set(0, 0, 20);
+    g.player.vel.set(0, 0, 0);
+    g.player.yaw = Math.PI;      // facing up the open north street
+    g.player.pitch = 0;
+  });
+  await sleep(120);
+  console.log(`       (was at ${stuckAt.playerPosF}, reset to [0,20] facing +Z)`);
+
   // Move and look simultaneously — the case a single-pointer implementation breaks on.
   const p0 = await report();
   await touch('touchStart', [{ x: 150, y: 280, id: 1 }]);

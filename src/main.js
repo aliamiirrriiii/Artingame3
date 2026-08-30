@@ -633,6 +633,8 @@ class Game {
     on('btn-play', () => this.startRun());
     on('btn-settings', () => this._setScreen('settings'));
     on('btn-howto', () => this._setScreen('howto'));
+    on('btn-credits', () => { this._buildCredits(); this._setScreen('credits'); });
+    on('btn-credits-back', () => this._setScreen('menu'));
     on('btn-howto-back', () => this._setScreen('menu'));
     on('btn-settings-back', () => this._setScreen(this.state === 'paused' ? 'pause' : 'menu'));
     on('btn-resume', () => this._resume());
@@ -732,7 +734,8 @@ class Game {
       if (e.code === 'Escape') {
         if (this.state === 'playing') this._pause();
         else if (this.state === 'paused' && this._screen === 'pause') this._resume();
-        else if (this._screen === 'settings' || this._screen === 'howto') {
+        else if (this._screen === 'settings' || this._screen === 'howto'
+                 || this._screen === 'credits') {
           this._setScreen(this.state === 'paused' ? 'pause' : 'menu');
         }
       }
@@ -742,6 +745,39 @@ class Game {
         this.hud.togglePerf(this._perfOn);
       }
     });
+  }
+
+  /**
+   * Credits, built from assets/credits.json — which is generated from the asset
+   * manifest at download time, so it cannot drift as assets change. Several of
+   * the models are CC-BY, which obliges us to attribute them somewhere a player
+   * can actually read.
+   */
+  async _buildCredits() {
+    const body = document.getElementById('credits-body');
+    if (this._creditsBuilt) return;
+
+    body.innerHTML = '<div class="engine">Loading…</div>';
+    let doc = null;
+    try {
+      const res = await fetch('assets/credits.json');
+      doc = await res.json();
+    } catch {
+      body.innerHTML = '<div class="engine">Credits manifest unavailable.</div>';
+      return;
+    }
+
+    const esc = (t) => String(t).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    const parts = [
+      '<div class="engine">Engine: <b>three.js</b> r180 (MIT). '
+      + 'Game code MIT. All audio synthesised at runtime.</div>',
+    ];
+    for (const e of doc.entries) {
+      parts.push(`<div class="lic">${esc(e.license)}</div>`);
+      parts.push(`<div class="files">${e.files.map(esc).join(' · ')}</div>`);
+    }
+    body.innerHTML = parts.join('');
+    this._creditsBuilt = true;
   }
 
   _resize() {

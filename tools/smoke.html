@@ -64,6 +64,10 @@ const step = (s) => { report.steps.push(s); };
       stations: level.stations.length,
       fixtures: level.fixtures.length,
       barrels: level.barrels.length,
+      propMeshes: level.props.meshes.length,
+      propTris: level.props.triangleCount,
+      propKinds: [...level.props.prepared.keys()],
+      brokenWindows: level.windowPlacements.length,
     };
     step('level');
 
@@ -108,6 +112,9 @@ const step = (s) => { report.steps.push(s); };
       { p: [-19, 1.7, -9], t: [-24, 2.2, -14], fl: true },  // 1 brick wall
       { p: [0, 1.7, 30], t: [0, 0.2, 24], fl: true },       // 2 ground closeup
       { p: [-8, 12, -8], t: [0, 1, 0], fl: false },         // 3 high wide
+      { p: [-3.4, 1.7, -17.6], t: [-6, 4.6, -20], fl: true },   // 4 street lamp
+      { p: [-26, 1.7, -15.2], t: [-26, 1.7, -19.6], fl: true }, // 5 broken windows
+      { p: [1.8, 1.5, -14.2], t: [0, 0.4, -17], fl: true },     // 6 cones
       { ...OV, fl: false },                                 // 4 no flashlight
       { ...OV, pools: false },                              // 5 no light pools
       { ...OV, moon: false },                               // 6 no moon

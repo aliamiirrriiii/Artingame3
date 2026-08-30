@@ -232,6 +232,9 @@ export const MANIFEST = {
   models: [
     { key: 'soldier', url: 'assets/models/soldier.glb' },
     { key: 'xbot', url: 'assets/models/xbot.glb' },
+    { key: 'lantern', url: 'assets/models/lantern.glb' },
+    { key: 'brokenWindow', url: 'assets/models/broken_window.glb' },
+    { key: 'trafficCone', url: 'assets/models/trafficcone/TrafficCone.gltf' },
   ],
   hdri: [
     { key: 'night', url: 'assets/hdri/moonless_night_1k.hdr' },
