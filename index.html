@@ -1,0 +1,605 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Night of the Risen</title>
+<meta name="description" content="A wave-survival zombie shooter running on WebGL2.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%A7%9F%3C/text%3E%3C/svg%3E">
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/build/three.module.js",
+    "three/addons/": "./vendor/three/examples/jsm/"
+  }
+}
+</script>
+
+<style>
+:root {
+  --ink:      #e8e4dc;
+  --dim:      #8b8578;
+  --blood:    #c8342a;
+  --blood-lo: #7a1f18;
+  --gold:     #e0b64a;
+  --toxic:    #7fc24a;
+  --cold:     #58b6d8;
+  --panel:    rgba(10,11,13,0.86);
+  --edge:     rgba(232,228,220,0.14);
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  --sans: "Inter", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0; padding: 0; height: 100%; overflow: hidden;
+  background: #05060a; color: var(--ink);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+  user-select: none; -webkit-user-select: none;
+  touch-action: none;
+}
+
+#game { position: fixed; inset: 0; display: block; width: 100%; height: 100%; }
+
+#ui { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
+#ui .clickable { pointer-events: auto; }
+
+/* ------------------------------------------------------------- crosshair */
+
+#crosshair {
+  position: absolute; left: 50%; top: 50%;
+  width: 46px; height: 46px; margin: -23px 0 0 -23px;
+  opacity: 0.9;
+}
+#crosshair .arm {
+  position: absolute; background: rgba(255,255,255,0.85);
+  box-shadow: 0 0 3px rgba(0,0,0,0.9);
+  transition: opacity .12s;
+}
+#crosshair .arm.v { width: 2px; height: 8px; left: 22px; }
+#crosshair .arm.h { height: 2px; width: 8px; top: 22px; }
+#ch-t { top: 0; } #ch-b { bottom: 0; } #ch-l { left: 0; } #ch-r { right: 0; }
+#ch-dot {
+  position: absolute; left: 22px; top: 22px; width: 2px; height: 2px;
+  background: rgba(255,255,255,0.95); border-radius: 50%;
+}
+#crosshair.hidden { opacity: 0; }
+
+#hitmarker {
+  position: absolute; left: 50%; top: 50%; width: 30px; height: 30px;
+  margin: -15px 0 0 -15px; opacity: 0;
+}
+#hitmarker span {
+  position: absolute; width: 11px; height: 2px; background: #fff;
+  box-shadow: 0 0 4px rgba(0,0,0,.8);
+}
+#hitmarker span:nth-child(1) { transform: rotate(45deg);  left: 0;  top: 4px; }
+#hitmarker span:nth-child(2) { transform: rotate(-45deg); right: 0; top: 4px; }
+#hitmarker span:nth-child(3) { transform: rotate(-45deg); left: 0;  bottom: 4px; }
+#hitmarker span:nth-child(4) { transform: rotate(45deg);  right: 0; bottom: 4px; }
+#hitmarker.show { animation: hm .22s ease-out; }
+#hitmarker.crit span { background: var(--blood); height: 3px; }
+#hitmarker.kill span { background: var(--gold); }
+@keyframes hm { 0% { opacity: 1; transform: scale(.65); } 100% { opacity: 0; transform: scale(1.35); } }
+
+/* ------------------------------------------------------------------ HUD */
+
+.hud-corner { position: absolute; padding: 22px 26px; }
+#hud-tl { top: 0; left: 0; }
+#hud-tr { top: 0; right: 0; text-align: right; }
+#hud-bl { bottom: 0; left: 0; }
+#hud-br { bottom: 0; right: 0; text-align: right; }
+
+.label {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .22em;
+  text-transform: uppercase; color: var(--dim);
+}
+
+#wave-num {
+  font-family: var(--mono); font-size: 44px; line-height: .9; font-weight: 700;
+  letter-spacing: -.02em;
+  text-shadow: 0 2px 18px rgba(0,0,0,.9);
+}
+#wave-num.boss { color: var(--blood); }
+#wave-sub { margin-top: 4px; }
+
+#wave-bar {
+  margin-top: 9px; width: 168px; height: 3px;
+  background: rgba(255,255,255,.11); overflow: hidden;
+}
+#wave-fill { height: 100%; width: 0%; background: var(--blood); transition: width .28s ease-out; }
+
+#points {
+  font-family: var(--mono); font-size: 30px; font-weight: 700; color: var(--gold);
+  text-shadow: 0 2px 16px rgba(0,0,0,.9); letter-spacing: -.01em;
+}
+#points-delta {
+  font-family: var(--mono); font-size: 13px; color: var(--gold);
+  opacity: 0; height: 16px; transition: opacity .25s;
+}
+#points-delta.show { opacity: .95; }
+
+/* health */
+#health-wrap { width: 250px; }
+#health-bar {
+  position: relative; height: 7px; background: rgba(255,255,255,.10);
+  overflow: hidden; margin-top: 6px;
+}
+#health-fill {
+  position: absolute; inset: 0; width: 100%;
+  background: linear-gradient(90deg, var(--blood-lo), var(--blood));
+  transition: width .16s ease-out;
+}
+#health-ghost {
+  position: absolute; inset: 0; width: 100%;
+  background: rgba(255,255,255,.30);
+  transition: width .5s ease-out .25s;
+}
+#health-num {
+  font-family: var(--mono); font-size: 22px; font-weight: 700; margin-top: 7px;
+}
+
+#perks { display: flex; gap: 7px; margin-top: 12px; }
+.perk {
+  width: 30px; height: 30px; border: 1px solid currentColor; border-radius: 50%;
+  display: grid; place-items: center;
+  font-family: var(--mono); font-size: 10px; font-weight: 700;
+  opacity: .95;
+}
+
+/* weapon */
+#weapon-name {
+  font-family: var(--mono); font-size: 14px; letter-spacing: .16em;
+  text-transform: uppercase; color: var(--ink);
+}
+#ammo {
+  font-family: var(--mono); font-weight: 700; line-height: .95; margin-top: 2px;
+  text-shadow: 0 2px 16px rgba(0,0,0,.9);
+}
+#ammo-mag { font-size: 46px; }
+#ammo-res { font-size: 20px; color: var(--dim); }
+#ammo.low #ammo-mag { color: var(--blood); }
+
+#reload-bar { width: 130px; height: 3px; background: rgba(255,255,255,.14); margin: 8px 0 0 auto; display: none; }
+#reload-fill { height: 100%; width: 0%; background: var(--ink); }
+#reload-bar.show { display: block; }
+
+#charge-bar { width: 130px; height: 4px; background: rgba(255,255,255,.14); margin: 8px 0 0 auto; display: none; }
+#charge-fill { height: 100%; width: 0%; background: var(--cold); }
+#charge-bar.show { display: block; }
+
+#slots { display: flex; gap: 6px; justify-content: flex-end; margin-top: 12px; }
+.slot {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .12em;
+  padding: 3px 7px; border: 1px solid var(--edge); color: var(--dim);
+}
+.slot.active { color: var(--ink); border-color: rgba(232,228,220,.55); background: rgba(232,228,220,.08); }
+
+#grenades { margin-top: 9px; font-family: var(--mono); font-size: 12px; color: var(--dim); letter-spacing: .1em; }
+
+/* ------------------------------------------------------- announcements */
+
+#announce {
+  position: absolute; left: 0; right: 0; top: 17%;
+  text-align: center; opacity: 0;
+}
+#announce .big {
+  font-family: var(--mono); font-size: 40px; font-weight: 700; letter-spacing: .1em;
+  text-shadow: 0 3px 30px rgba(0,0,0,.95);
+}
+#announce .small {
+  font-family: var(--mono); font-size: 12px; letter-spacing: .3em;
+  color: var(--dim); margin-top: 8px; text-transform: uppercase;
+}
+#announce.show { animation: ann 2.8s ease-out forwards; }
+#announce.boss .big { color: var(--blood); }
+#announce.good .big { color: var(--toxic); }
+#announce.gold .big { color: var(--gold); }
+@keyframes ann {
+  0% { opacity: 0; transform: translateY(14px) scale(.97); }
+  12% { opacity: 1; transform: none; }
+  74% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-10px); }
+}
+
+#notice-stack {
+  position: absolute; left: 50%; transform: translateX(-50%); bottom: 21%;
+  display: flex; flex-direction: column-reverse; align-items: center; gap: 6px;
+}
+.notice {
+  font-family: var(--mono); font-size: 12px; letter-spacing: .16em;
+  padding: 5px 13px; background: var(--panel); border: 1px solid var(--edge);
+  text-transform: uppercase; animation: noticeIn 2.4s ease-out forwards;
+}
+.notice.good { color: var(--toxic); border-color: rgba(127,194,74,.4); }
+.notice.bad  { color: var(--blood); border-color: rgba(200,52,42,.4); }
+.notice.perk { color: var(--cold); border-color: rgba(88,182,216,.4); }
+@keyframes noticeIn {
+  0% { opacity: 0; transform: translateY(8px); }
+  10%,72% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: translateY(-6px); }
+}
+
+/* --------------------------------------------------------------- prompt */
+
+#prompt {
+  position: absolute; left: 50%; transform: translateX(-50%); bottom: 27%;
+  min-width: 260px; max-width: 380px; padding: 12px 16px;
+  background: var(--panel); border: 1px solid var(--edge);
+  backdrop-filter: blur(6px); text-align: center; display: none;
+}
+#prompt.show { display: block; }
+#prompt .ptitle { font-family: var(--mono); font-size: 15px; letter-spacing: .14em; }
+#prompt .pdetail { font-size: 11.5px; color: var(--dim); margin-top: 5px; line-height: 1.45; }
+#prompt .paction {
+  margin-top: 9px; font-family: var(--mono); font-size: 12px; letter-spacing: .12em;
+  color: var(--gold);
+}
+#prompt.cant .paction { color: var(--blood); }
+#prompt kbd {
+  display: inline-grid; place-items: center; min-width: 19px; height: 19px;
+  padding: 0 5px; border: 1px solid var(--edge); border-bottom-width: 2px;
+  font-family: var(--mono); font-size: 11px; color: var(--ink); margin-right: 5px;
+}
+
+/* ----------------------------------------------------- damage direction */
+
+#damage-ring { position: absolute; inset: 0; overflow: hidden; }
+.dmg-arc {
+  position: absolute; left: 50%; top: 50%; width: 300px; height: 300px;
+  margin: -150px 0 0 -150px; opacity: 0;
+  background: conic-gradient(from -22deg, rgba(200,40,30,.85), rgba(200,40,30,0) 44deg);
+  clip-path: polygon(50% 50%, 100% 0, 100% 100%);
+  animation: dmgArc 1.15s ease-out forwards;
+}
+@keyframes dmgArc { 0% { opacity: .95; } 100% { opacity: 0; } }
+
+#vignette-hurt {
+  position: absolute; inset: 0; opacity: 0;
+  background: radial-gradient(ellipse at center, transparent 42%, rgba(120,10,6,.72) 100%);
+  transition: opacity .18s;
+}
+
+/* -------------------------------------------------------- damage numbers */
+
+#dmg-layer { position: absolute; inset: 0; overflow: hidden; }
+.dmg-num {
+  position: absolute; font-family: var(--mono); font-size: 15px; font-weight: 700;
+  color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,.95);
+  transform: translate(-50%, -50%); will-change: transform, opacity;
+}
+.dmg-num.crit { color: var(--blood); font-size: 21px; }
+
+/* --------------------------------------------------------------- screens */
+
+.screen {
+  position: absolute; inset: 0; display: none;
+  place-items: center; background: rgba(4,5,8,.9);
+  backdrop-filter: blur(9px); pointer-events: auto;
+}
+.screen.show { display: grid; }
+
+.panel { width: min(680px, 90vw); }
+
+.title {
+  font-family: var(--mono); font-weight: 700; letter-spacing: -.02em;
+  font-size: clamp(38px, 7vw, 74px); line-height: .92;
+}
+.title em { font-style: normal; color: var(--blood); }
+.tagline {
+  font-family: var(--mono); font-size: 11.5px; letter-spacing: .34em;
+  color: var(--dim); text-transform: uppercase; margin-top: 12px;
+}
+.rule { height: 1px; background: var(--edge); margin: 26px 0; }
+
+.btn {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  background: transparent; border: 1px solid var(--edge);
+  color: var(--ink); font-family: var(--mono); font-size: 14px;
+  letter-spacing: .14em; text-transform: uppercase;
+  padding: 14px 18px; margin-bottom: 10px;
+  transition: background .14s, border-color .14s, transform .14s;
+}
+.btn:hover, .btn:focus-visible {
+  background: rgba(232,228,220,.07); border-color: rgba(232,228,220,.45);
+  transform: translateX(3px); outline: none;
+}
+.btn.primary { border-color: rgba(200,52,42,.55); color: #fff; }
+.btn.primary:hover { background: rgba(200,52,42,.16); border-color: var(--blood); }
+.btn .hint { float: right; color: var(--dim); letter-spacing: .1em; }
+
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 34px; }
+.controls-list { font-size: 12.5px; line-height: 2.0; color: var(--dim); }
+.controls-list b { color: var(--ink); font-weight: 500; }
+.controls-list kbd {
+  display: inline-grid; place-items: center; min-width: 21px; height: 20px;
+  padding: 0 6px; border: 1px solid var(--edge); border-bottom-width: 2px;
+  font-family: var(--mono); font-size: 11px; color: var(--ink);
+}
+
+.setting { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 15px; }
+.setting label { font-family: var(--mono); font-size: 11.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
+.setting .value { font-family: var(--mono); font-size: 12px; color: var(--ink); min-width: 58px; text-align: right; }
+.setting input[type=range] { flex: 1; accent-color: var(--blood); }
+.seg { display: flex; gap: 5px; }
+.seg button {
+  cursor: pointer; background: transparent; border: 1px solid var(--edge); color: var(--dim);
+  font-family: var(--mono); font-size: 11px; letter-spacing: .1em; padding: 6px 11px;
+  text-transform: uppercase;
+}
+.seg button.on { color: var(--ink); border-color: rgba(232,228,220,.5); background: rgba(232,228,220,.09); }
+
+/* loading */
+#load-bar { width: min(420px, 74vw); height: 2px; background: rgba(255,255,255,.12); margin-top: 26px; }
+#load-fill { height: 100%; width: 0%; background: var(--blood); transition: width .2s; }
+#load-text {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .26em;
+  color: var(--dim); margin-top: 13px; text-transform: uppercase;
+}
+#load-tip { font-size: 12.5px; color: var(--dim); margin-top: 30px; max-width: 460px; line-height: 1.6; }
+
+/* game over */
+#over-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px 34px; margin: 26px 0; }
+.stat .k { font-family: var(--mono); font-size: 10px; letter-spacing: .22em; color: var(--dim); text-transform: uppercase; }
+.stat .v { font-family: var(--mono); font-size: 27px; font-weight: 700; margin-top: 3px; }
+
+/* perf */
+#perf {
+  position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  font-family: var(--mono); font-size: 10.5px; color: var(--dim);
+  background: rgba(4,5,8,.8); padding: 5px 11px; display: none;
+  letter-spacing: .06em; white-space: pre;
+}
+#perf.show { display: block; }
+
+#box-spin {
+  position: absolute; left: 50%; transform: translateX(-50%); bottom: 34%;
+  font-family: var(--mono); font-size: 26px; letter-spacing: .1em; color: var(--gold);
+  text-shadow: 0 2px 20px rgba(0,0,0,.9); display: none;
+}
+#box-spin.show { display: block; }
+
+#powerup-bar {
+  position: absolute; left: 50%; transform: translateX(-50%); top: 10px;
+  display: flex; gap: 8px;
+}
+.pu {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .16em;
+  padding: 5px 11px; border: 1px solid currentColor; background: rgba(4,5,8,.7);
+}
+
+#lowfps {
+  position: absolute; left: 50%; transform: translateX(-50%); top: 54px;
+  font-family: var(--mono); font-size: 11px; letter-spacing: .14em; color: var(--dim);
+  background: rgba(4,5,8,.8); padding: 6px 12px; display: none;
+}
+#lowfps.show { display: block; }
+</style>
+</head>
+
+<body>
+<canvas id="game"></canvas>
+
+<div id="ui">
+  <div id="crosshair">
+    <div class="arm v" id="ch-t"></div>
+    <div class="arm v" id="ch-b"></div>
+    <div class="arm h" id="ch-l"></div>
+    <div class="arm h" id="ch-r"></div>
+    <div id="ch-dot"></div>
+  </div>
+  <div id="hitmarker"><span></span><span></span><span></span><span></span></div>
+
+  <div id="damage-ring"></div>
+  <div id="vignette-hurt"></div>
+  <div id="dmg-layer"></div>
+
+  <div id="powerup-bar"></div>
+  <div id="perf"></div>
+  <div id="lowfps">Quality reduced to hold the frame rate</div>
+
+  <div class="hud-corner" id="hud-tl">
+    <div class="label">Wave</div>
+    <div id="wave-num">1</div>
+    <div class="label" id="wave-sub">12 remaining</div>
+    <div id="wave-bar"><div id="wave-fill"></div></div>
+  </div>
+
+  <div class="hud-corner" id="hud-tr">
+    <div class="label">Points</div>
+    <div id="points">500</div>
+    <div id="points-delta"></div>
+  </div>
+
+  <div class="hud-corner" id="hud-bl">
+    <div id="health-wrap">
+      <div class="label">Condition</div>
+      <div id="health-bar">
+        <div id="health-ghost"></div>
+        <div id="health-fill"></div>
+      </div>
+      <div id="health-num">100</div>
+      <div id="perks"></div>
+    </div>
+  </div>
+
+  <div class="hud-corner" id="hud-br">
+    <div id="weapon-name">M1911</div>
+    <div id="ammo"><span id="ammo-mag">8</span> <span id="ammo-res">/ 120</span></div>
+    <div id="reload-bar"><div id="reload-fill"></div></div>
+    <div id="charge-bar"><div id="charge-fill"></div></div>
+    <div id="grenades">FRAGS ×3</div>
+    <div id="slots"></div>
+  </div>
+
+  <div id="announce"><div class="big"></div><div class="small"></div></div>
+  <div id="notice-stack"></div>
+  <div id="box-spin"></div>
+
+  <div id="prompt">
+    <div class="ptitle"></div>
+    <div class="pdetail"></div>
+    <div class="paction"></div>
+  </div>
+
+  <!-- ------------------------------------------------------- loading --- -->
+  <div class="screen show" id="loading">
+    <div class="panel" style="text-align:center">
+      <div class="title">NIGHT OF THE <em>RISEN</em></div>
+      <div class="tagline">Precinct 13 · Sector sealed</div>
+      <div id="load-bar" style="margin-inline:auto"><div id="load-fill"></div></div>
+      <div id="load-text">Loading</div>
+      <div id="load-tip" style="margin-inline:auto"></div>
+    </div>
+  </div>
+
+  <!-- ---------------------------------------------------------- menu --- -->
+  <div class="screen" id="menu">
+    <div class="panel">
+      <div class="title">NIGHT OF THE <em>RISEN</em></div>
+      <div class="tagline">Survive the night · Precinct 13</div>
+      <div class="rule"></div>
+      <div class="cols">
+        <div>
+          <button class="btn primary clickable" id="btn-play">Enter the precinct <span class="hint">Click</span></button>
+          <button class="btn clickable" id="btn-settings">Settings</button>
+          <button class="btn clickable" id="btn-howto">How to survive</button>
+          <div class="label" style="margin-top:20px">Best run</div>
+          <div style="font-family:var(--mono);font-size:26px;font-weight:700;margin-top:4px" id="best-run">—</div>
+        </div>
+        <div class="controls-list">
+          <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> &nbsp;<b>Move</b></div>
+          <div><kbd>Shift</kbd> <b>Sprint</b> · <kbd>Ctrl</kbd> <b>Crouch</b> · <kbd>Space</kbd> <b>Jump</b></div>
+          <div><b>Mouse</b> Aim · <b>LMB</b> Fire · <b>RMB</b> Aim down sights</div>
+          <div><kbd>R</kbd> <b>Reload</b> · <kbd>G</kbd> <b>Grenade</b> · <kbd>F</kbd> <b>Flashlight</b></div>
+          <div><kbd>E</kbd> <b>Buy / interact</b> · <kbd>Q</kbd> <b>Last weapon</b></div>
+          <div><kbd>1</kbd>–<kbd>4</kbd> / <b>Wheel</b> Switch weapon</div>
+          <div><kbd>Esc</kbd> <b>Pause</b> · <kbd>F3</kbd> <b>Performance</b></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- --------------------------------------------------------- howto --- -->
+  <div class="screen" id="howto">
+    <div class="panel">
+      <div class="title" style="font-size:clamp(28px,4vw,44px)">How to survive</div>
+      <div class="rule"></div>
+      <div class="cols">
+        <div class="controls-list" style="line-height:1.75">
+          <p><b>Keep moving.</b> Standing still is how you die. The ring road
+             around the block is unbroken — when the plaza fills up, start a lap
+             and let them string out behind you.</p>
+          <p><b>Points come from damage, not just kills.</b> Chipping a brute
+             still pays. Headshots pay 50% more.</p>
+          <p><b>Buy in this order.</b> A real gun by wave 3, Juggernog by wave 6,
+             then the mystery box once you can spare a thousand.</p>
+        </div>
+        <div class="controls-list" style="line-height:1.75">
+          <p><b>Learn the horde.</b> Runners flank, spitters punish cover,
+             screamers turn the whole street into runners — kill them first.
+             Brutes charge; sidestep, do not backpedal.</p>
+          <p><b>Barrels and cars explode.</b> Shoot them when the pack walks past.</p>
+          <p><b>Every fifth wave is a boss.</b> The sky turns red. Save a
+             power-up for it.</p>
+        </div>
+      </div>
+      <div class="rule"></div>
+      <button class="btn clickable" id="btn-howto-back">Back</button>
+    </div>
+  </div>
+
+  <!-- ------------------------------------------------------ settings --- -->
+  <div class="screen" id="settings">
+    <div class="panel">
+      <div class="title" style="font-size:clamp(28px,4vw,44px)">Settings</div>
+      <div class="rule"></div>
+
+      <div class="setting">
+        <label>Quality</label>
+        <div class="seg" id="seg-quality">
+          <button data-q="low">Low</button>
+          <button data-q="medium">Medium</button>
+          <button data-q="high">High</button>
+          <button data-q="ultra">Ultra</button>
+        </div>
+      </div>
+
+      <div class="setting">
+        <label>Frame target</label>
+        <div class="seg" id="seg-fps">
+          <button data-f="30">30</button>
+          <button data-f="60">60</button>
+          <button data-f="120">120</button>
+        </div>
+      </div>
+
+      <div class="setting">
+        <label>Adaptive resolution</label>
+        <div class="seg" id="seg-adaptive">
+          <button data-a="1">On</button>
+          <button data-a="0">Off</button>
+        </div>
+      </div>
+
+      <div class="setting">
+        <label>Sensitivity</label>
+        <input type="range" id="set-sens" min="20" max="400" step="5" class="clickable">
+        <div class="value" id="val-sens">100</div>
+      </div>
+
+      <div class="setting">
+        <label>Volume</label>
+        <input type="range" id="set-vol" min="0" max="100" step="1" class="clickable">
+        <div class="value" id="val-vol">70</div>
+      </div>
+
+      <div class="setting">
+        <label>Invert Y</label>
+        <div class="seg" id="seg-invert">
+          <button data-i="0">Off</button>
+          <button data-i="1">On</button>
+        </div>
+      </div>
+
+      <div class="rule"></div>
+      <button class="btn clickable" id="btn-settings-back">Back</button>
+    </div>
+  </div>
+
+  <!-- --------------------------------------------------------- pause --- -->
+  <div class="screen" id="pause">
+    <div class="panel">
+      <div class="title" style="font-size:clamp(30px,5vw,52px)">Paused</div>
+      <div class="tagline" id="pause-sub">Wave 1 · 500 points</div>
+      <div class="rule"></div>
+      <button class="btn primary clickable" id="btn-resume">Resume</button>
+      <button class="btn clickable" id="btn-pause-settings">Settings</button>
+      <button class="btn clickable" id="btn-quit">Abandon run</button>
+    </div>
+  </div>
+
+  <!-- ----------------------------------------------------- game over --- -->
+  <div class="screen" id="gameover">
+    <div class="panel">
+      <div class="title">YOU <em>DIED</em></div>
+      <div class="tagline" id="over-sub">The precinct is quiet again</div>
+      <div id="over-stats">
+        <div class="stat"><div class="k">Waves survived</div><div class="v" id="ov-wave">0</div></div>
+        <div class="stat"><div class="k">Kills</div><div class="v" id="ov-kills">0</div></div>
+        <div class="stat"><div class="k">Points earned</div><div class="v" id="ov-points">0</div></div>
+        <div class="stat"><div class="k">Time survived</div><div class="v" id="ov-time">0:00</div></div>
+      </div>
+      <div class="rule"></div>
+      <button class="btn primary clickable" id="btn-retry">Try again</button>
+      <button class="btn clickable" id="btn-menu">Main menu</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
