@@ -81,6 +81,12 @@
       ]
     },
     {
+      "license": "Provenance unclear — NOT cleared for release. Taken from iErcann/enari-engine (the repository is MIT, but this model is not among the Sketchfab attributions in its README, and its material names \"t_phoenix\" and \"v_hands\" are Counter-Strike / Half-Life viewmodel conventions, so it is most likely derived from those assets). Included at the project owner's explicit request for a non-commercial test build. Replace before shipping.",
+      "files": [
+        "models/viewmodel_rifle.glb"
+      ]
+    },
+    {
       "license": "SIL Open Font License 1.1 — Barlow (c) 2017 The Barlow Project Authors (Jeremy Tribby)",
       "files": [
         "fonts/BarlowCondensed-Bold.ttf",

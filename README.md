@@ -113,6 +113,8 @@ Freeze and Carnage.
 
 ![Every weapon the gunsmith builds](docs/screenshot-arsenal.png)
 
+![The downloaded rifle viewmodel, in game](docs/screenshot-rifle.png)
+
 Twelve weapons, each built to solve a problem the others do not.
 
 | | Weapon | Why you would carry it |
@@ -130,8 +132,8 @@ Twelve weapons, each built to solve a problem the others do not.
 | 💣 | M79 Thumper | One shell, one crowd |
 | ☄️ | Ferro Lance | Charge, release, erase a lane |
 
-Weapons are built by a **gunsmith** (`src/weapons/gunsmith.js`) rather than
-modelled: each is assembled from bevelled slabs, revolved barrels with real
+Eleven of the twelve weapons are built by a **gunsmith**
+(`src/weapons/gunsmith.js`) rather than modelled: each is assembled from bevelled slabs, revolved barrels with real
 crowns and visible bores, knurled turrets, slotted Picatinny rails and open
 trigger guards, then merged per material — five to ten thousand triangles and a
 handful of draw calls each. Edge wear is baked to vertex colours by finding the
@@ -144,8 +146,25 @@ minigun's rotor spins. Aiming holds each weapon at *its own* sight height, so
 the irons land on the crosshair instead of near it, and far enough forward that
 a rifle's buttstock is not six centimetres from your eye.
 
-They live in the main scene parented to the camera, so they take the world's
-light, the muzzle flash, the bloom and the grade. A gun rendered in its own pass
+The twelfth, the rifle, is a downloaded viewmodel: a rigged Galil with gloved
+hands, a full finger chain and an authored hold animation, at 14,091 triangles.
+`src/weapons/viewmodels.js` poses it (a rigged model's bind pose is not the pose
+it was made for — the weapon is placed into the hand by the animation, so
+loading it and drawing it gives you a rifle floating beside a pair of T-posed
+arms), calibrates it into the rig's space off its own wrist bone rather than by
+eye, and lets it override the hip and aim positions, because it arrives as a
+whole authored composition rather than as a bare gun.
+
+**Its provenance is unclear and it is not cleared for release.** It comes from
+[iErcann/enari-engine](https://github.com/iErcann/enari-engine), which is MIT,
+but the model is not among the Sketchfab attributions in that repository's
+README, and its material names — `t_phoenix`, `v_hands` — are Counter-Strike and
+Half-Life viewmodel conventions. It is here at the project owner's explicit
+request for a non-commercial test build, and the Credits screen says so.
+
+Everything the arsenal is made of lives in the main scene parented to the
+camera, so it takes the world's light, the muzzle flash, the bloom and the
+grade. A gun rendered in its own pass
 always looks pasted on. The trade is wall clipping, handled by pulling the
 weapon back when something solid is close.
 

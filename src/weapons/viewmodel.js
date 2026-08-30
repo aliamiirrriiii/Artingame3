@@ -1,6 +1,10 @@
 import * as THREE from 'three';
 import { clamp, damp, lerp } from '../core/util.js';
 import { buildWeapon } from './gunsmith.js';
+import { MODEL_VIEWMODELS, buildModelWeapon } from './viewmodels.js';
+
+/** Where a gunsmith-built weapon is held at the hip. Models bring their own. */
+const HIP_POS = new THREE.Vector3(0.136, -0.116, -0.335);
 
 /**
  * First-person weapon viewmodels, built procedurally.
@@ -16,10 +20,11 @@ import { buildWeapon } from './gunsmith.js';
  */
 
 export class Viewmodel {
-  constructor(stage, materials, collision) {
+  constructor(stage, materials, collision, assets = null) {
     this.stage = stage;
     this.mats = materials;
     this.collision = collision;
+    this.assets = assets;
 
     this.root = new THREE.Group();
     this.root.name = 'Viewmodel';
@@ -58,7 +63,7 @@ export class Viewmodel {
     this.motion = {};
     this.glow = null;
 
-    this._basePos = new THREE.Vector3(0.136, -0.116, -0.335);
+    this._basePos = HIP_POS.clone();
     // Y is replaced per weapon at equip time from its sight height; the value
     // here is only what an unbuilt weapon would use.
     this._adsPos = new THREE.Vector3(0, -0.030, -0.215);
@@ -108,17 +113,32 @@ export class Viewmodel {
     // Weapons differ by centimetres here — an AK's rear leaf sits 26 mm higher
     // than a 1911's notch — and a single shared offset puts one or the other
     // visibly off the crosshair.
-    this._adsPos.set(
-      0,
-      -(g.userData.sightY ?? 0.020),
-      -clamp(0.12 + (g.userData.rear ?? 0.10), 0.22, 0.40),
-    );
+    if (g.userData.basePos) {
+      // A downloaded viewmodel comes framed; the rig honours its framing.
+      this._basePos.set(...g.userData.basePos);
+      this._adsPos.set(...(g.userData.adsPos || [0, -(g.userData.sightY ?? 0.02), -0.26]));
+    } else {
+      this._basePos.copy(HIP_POS);
+      this._adsPos.set(
+        0,
+        -(g.userData.sightY ?? 0.020),
+        -clamp(0.12 + (g.userData.rear ?? 0.10), 0.22, 0.40),
+      );
+    }
 
     // Muzzle marker sits at the end of the barrel.
     this.muzzle.position.copy(g.userData.muzzle || new THREE.Vector3(0, 0, -0.3));
   }
 
   _build(spec) {
+    // A downloaded viewmodel where there is one, the gunsmith otherwise. If the
+    // asset failed to load we fall through rather than leaving the player
+    // holding nothing.
+    const cfg = MODEL_VIEWMODELS[spec.model.type];
+    if (cfg && this.assets) {
+      const g = buildModelWeapon(spec, cfg, this.assets);
+      if (g) return g;
+    }
     return buildWeapon(spec, this.mats);
   }
 

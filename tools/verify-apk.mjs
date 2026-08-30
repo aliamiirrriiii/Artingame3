@@ -71,6 +71,7 @@ const CODE = [
   'vendor/three/examples/jsm/utils/SkeletonUtils.js',
   'src/world/props.js',
   'src/weapons/gunsmith.js',
+  'src/weapons/viewmodels.js',
   'src/weapons/viewmodel.js',
   'src/ui/hud.js',
   'assets/credits.json',

@@ -170,7 +170,7 @@ class Game {
       this.zombies = new ZombieManager(this.stage.scene, this.assets, this.level, this.effects, this.preset);
       this.zombies.prewarm(this.preset.maxZombies);
       this.player = new Player(this.stage, this.level, this.effects);
-      this.viewmodel = new Viewmodel(this.stage, this.materials, this.level.collision);
+      this.viewmodel = new Viewmodel(this.stage, this.materials, this.level.collision, this.assets);
       this.combat = new Combat({
         stage: this.stage, player: this.player, zombies: this.zombies,
         level: this.level, effects: this.effects, viewmodel: this.viewmodel,
@@ -461,6 +461,12 @@ class Game {
     this.runTime = 0;
 
     for (const id of this.devGive) this.combat.give(id);
+    // ?give=rifle also equips it, so a headless run can look at a weapon the
+    // bot would otherwise never buy.
+    if (this.devGive.length) {
+      const i = this.combat.owned.indexOf(this.devGive[this.devGive.length - 1]);
+      if (i >= 0) this.combat.switchTo(i);
+    }
     if (this.devPoints) this.economy.points = this.devPoints;
     if (this.devWave > 1) this.director.wave = this.devWave - 1;
 

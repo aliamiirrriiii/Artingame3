@@ -234,6 +234,7 @@ export const MANIFEST = {
     { key: 'lantern', url: 'assets/models/lantern.glb' },
     { key: 'brokenWindow', url: 'assets/models/broken_window.glb' },
     { key: 'trafficCone', url: 'assets/models/trafficcone/TrafficCone.gltf' },
+    { key: 'viewmodelRifle', url: 'assets/models/viewmodel_rifle.glb' },
   ],
   hdri: [
     { key: 'day', url: 'assets/hdri/day_1k.hdr' },

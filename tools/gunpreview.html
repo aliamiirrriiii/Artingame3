@@ -16,6 +16,7 @@ import { AssetManager, MANIFEST } from '../src/core/assets.js';
 import { MaterialLibrary } from '../src/world/materials.js';
 import { buildWeapon, triangleCount } from '../src/weapons/gunsmith.js';
 import { Viewmodel } from '../src/weapons/viewmodel.js';
+import { MODEL_VIEWMODELS, buildModelWeapon } from '../src/weapons/viewmodels.js';
 import { WEAPONS } from '../src/weapons/arsenal.js';
 
 /**
@@ -78,13 +79,59 @@ try {
   const mats = new MaterialLibrary(assets);
   mats.setEnvironment?.(scene.environment);
 
+  // Viewmodel inspection: what is in the downloaded rig, where it sits, and how
+  // big it is once its own hold animation has been applied. A rigged model's
+  // bind pose tells you none of that.
+  if (q.get('inspect')) {
+    const gltf = assets.model(q.get('inspect'));
+    if (!gltf) { report.errors.push(`no model "${q.get('inspect')}"`); report.done = true; return; }
+    const root = gltf.scene;
+    if (gltf.animations && gltf.animations.length) {
+      const mixer = new THREE.AnimationMixer(root);
+      mixer.clipAction(gltf.animations[0]).play();
+      mixer.update(Number(q.get('t') || 0.05));
+    }
+    root.updateMatrixWorld(true);
+    const box = (o) => {
+      const b = new THREE.Box3().setFromObject(o);
+      return { min: b.min.toArray().map(v => +v.toFixed(3)), max: b.max.toArray().map(v => +v.toFixed(3)) };
+    };
+    const meshes = [];
+    root.traverse((o) => {
+      if (!o.isMesh && !o.isSkinnedMesh) return;
+      meshes.push({
+        name: o.name, skinned: !!o.isSkinnedMesh,
+        material: Array.isArray(o.material) ? o.material.map(m => m.name) : o.material.name,
+        tris: Math.round((o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3),
+        box: box(o),
+      });
+    });
+    // Where the hands actually are. Calibrating a viewmodel by eye takes a
+    // render per guess; the grip point is a bone, so it can just be read.
+    const bones = {};
+    for (const n of ['r_wrist', 'l_wrist', 'r_middle_low', 'l_middle_low', 'root']) {
+      const o = root.getObjectByName(n);
+      if (o) bones[n] = o.getWorldPosition(new THREE.Vector3()).toArray().map(v => +v.toFixed(3));
+    }
+    report.inspect = {
+      bones,
+      clips: (gltf.animations || []).map(a => ({ name: a.name, dur: +a.duration.toFixed(2) })),
+      whole: box(root),
+      meshes,
+      topLevel: root.children.map(c => ({ name: c.name, type: c.type, pos: c.position.toArray().map(v => +v.toFixed(3)) })),
+    };
+    report.ok = report.errors.length === 0;
+    report.done = true;
+    return;
+  }
+
   // Mechanism check. The bot smoke run cannot reach the wall-buy weapons, so
   // this drives every one of them through the real Viewmodel and asserts that
   // the slide, bolt, pump, cylinder, magazine and rotor each move when they are
   // supposed to. A gun whose action is welded shut still renders perfectly.
   if (q.get('anim') === '1') {
     const stage = { camera: new THREE.PerspectiveCamera(75, W / H, 0.01, 100) };
-    const vm = new Viewmodel(stage, mats, null);
+    const vm = new Viewmodel(stage, mats, null, assets);
     const player = { bobPhase: 0, bobAmount: 0.4, sprinting: false, pos: new THREE.Vector3() };
     const input = { mouse: { dx: 0, dy: 0 } };
     const step = (n, opts) => { for (let i = 0; i < n; i++) vm.update(1 / 60, player, input, opts); };
@@ -122,14 +169,42 @@ try {
     return;
   }
 
+  // Hip view: exactly what the player sees, at the game's field of view, with
+  // the calibration numbers overridable from the query string. Calibrating a
+  // downloaded viewmodel is a handful of guesses, and this is the loop that
+  // makes each guess cost one render rather than one code change.
+  const vm = q.get('vm');
+  if (vm && WEAPONS[vm]) {
+    const cfg = { ...(MODEL_VIEWMODELS[WEAPONS[vm].model.type] || {}) };
+    if (q.get('vs')) cfg.scale = Number(q.get('vs'));
+    if (q.get('vo')) cfg.offset = q.get('vo').split(',').map(Number);
+    const g = (cfg.asset && buildModelWeapon(WEAPONS[vm], cfg, assets)) || buildWeapon(WEAPONS[vm], mats);
+    const rig = new THREE.Group();
+    rig.add(g);
+    rig.scale.setScalar(0.94);
+    rig.position.set(...(q.get('vp') ? q.get('vp').split(',').map(Number)
+      : (g.userData.basePos || [0.136, -0.116, -0.335])));
+    rig.rotation.set(0.022, 0.055, -0.018);
+    scene.add(rig);
+    const cam = new THREE.PerspectiveCamera(75, W / H, 0.01, 40);
+    const b = new THREE.Box3().setFromObject(g);
+    report.weapons.push({ id: vm, scale: cfg.scale, offset: cfg.offset,
+      box: { min: b.min.toArray().map(v => +v.toFixed(3)), max: b.max.toArray().map(v => +v.toFixed(3)) } });
+    renderer.render(scene, cam);
+    report.ok = report.errors.length === 0;
+    report.done = true;
+    return;
+  }
+
   // Sighting check: reproduce the viewmodel's aimed pose and look down it.
   const ads = q.get('ads');
   if (ads && WEAPONS[ads]) {
-    const g = buildWeapon(WEAPONS[ads], mats);
+    const cfg = MODEL_VIEWMODELS[WEAPONS[ads].model.type];
+    const g = (cfg && buildModelWeapon(WEAPONS[ads], cfg, assets)) || buildWeapon(WEAPONS[ads], mats);
     const rig = new THREE.Group();
     rig.add(g);
-    rig.position.set(0, -(g.userData.sightY ?? 0.02),
-      -Math.min(0.40, Math.max(0.22, 0.12 + (g.userData.rear ?? 0.10))));
+    rig.position.set(...(g.userData.adsPos || [0, -(g.userData.sightY ?? 0.02),
+      -Math.min(0.40, Math.max(0.22, 0.12 + (g.userData.rear ?? 0.10)))]));
     scene.add(rig);
     const cam = new THREE.PerspectiveCamera(75, W / H, 0.01, 40);
     const mark = document.createElement('div');
