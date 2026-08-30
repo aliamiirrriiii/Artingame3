@@ -19,6 +19,7 @@ import { buildWeapon, triangleCount } from '../src/weapons/gunsmith.js';
 import { Viewmodel } from '../src/weapons/viewmodel.js';
 import { MODEL_VIEWMODELS, buildModelWeapon, buildAdoptedWeapon } from '../src/weapons/viewmodels.js';
 import { WEAPONS } from '../src/weapons/arsenal.js';
+import { handsTemplate, attachHands } from '../src/weapons/hands.js';
 
 /**
  * Renders every weapon the gunsmith can build, laid out in a grid and lit like
@@ -37,6 +38,11 @@ import { WEAPONS } from '../src/weapons/arsenal.js';
  *
  *   ?only=rifle,shotgun   preview a subset
  *   ?view=1               side elevation instead of three-quarter
+ *   ?hb=0,-0.01,0         nudge the hands off the fitted grip, to tune it
+ *   ?hands=1              every weapon with the shared gloves fitted to it,
+ *                         seen over the shooter's own knuckles — the only way
+ *                         to tell a hand wrapped round a grip from one buried
+ *                         in it
  */
 const report = { errors: [], weapons: [] };
 window.__smoke = report;
@@ -151,6 +157,48 @@ try {
   // this drives every one of them through the real Viewmodel and asserts that
   // the slide, bolt, pump, cylinder, magazine and rotor each move when they are
   // supposed to. A gun whose action is welded shut still renders perfectly.
+  /**
+   * Widest dimension of a fitted pair of hands, in metres. Returns 0 for the
+   * one weapon that came with its own arms — there is nothing to measure
+   * there, its gloves are a primitive of the same skinned mesh as the rifle —
+   * and null when a weapon has nothing holding it at all.
+   */
+  const handSpan = (g) => {
+    if (!g) return null;
+    if (g.userData.ownHands) return 0;
+    const holder = g.userData.hands;
+    if (!holder) return null;
+    holder.updateMatrixWorld(true);
+    const size = new THREE.Box3().setFromObject(holder).getSize(new THREE.Vector3());
+    return +Math.max(size.x, size.y, size.z).toFixed(3);
+  };
+
+  /**
+   * How far the trigger palm ended up from the grip it was fitted to, in
+   * metres. This is the invariant the whole fit rests on, and the only check
+   * that catches a hands template cloned out of an already-scaled source
+   * scene: the arms come out the right size either way, they just land in the
+   * wrong place.
+   *
+   */
+  const palmOffset = (g) => {
+    const h = g && g.userData.hands, pts = g && g.userData.handPoints;
+    if (!h || !pts) return null;
+    // Refresh from the very top: this harness never renders, so the camera
+    // and rig matrices the weapon hangs off are otherwise whatever the last
+    // update left them, and a partial refresh reads the palm in one frame's
+    // space and the weapon in another's.
+    let top = g;
+    while (top.parent) top = top.parent;
+    top.updateMatrixWorld(true);
+    const b = {};
+    h.traverse((o) => { if (o.name) b[o.name] = o; });
+    if (!b.r_wrist || !b.r_middle_low) return null;
+    const p = new THREE.Vector3().setFromMatrixPosition(b.r_wrist.matrixWorld)
+      .lerp(new THREE.Vector3().setFromMatrixPosition(b.r_middle_low.matrixWorld), 0.5);
+    return +g.worldToLocal(p).distanceTo(pts.grip).toFixed(4);
+  };
+
   if (q.get('anim') === '1') {
     const stage = { camera: new THREE.PerspectiveCamera(75, W / H, 0.01, 100) };
     const vm = new Viewmodel(stage, mats, null, assets);
@@ -171,6 +219,7 @@ try {
         }
       };
 
+      const palmOff = palmOffset(vm.current);
       vm.punch(1);
       for (let i = 0; i < 24; i++) { step(1); watch(); }
       vm.startReload(1.2);
@@ -182,10 +231,44 @@ try {
 
       const animatable = Object.keys(parts).filter((k) => k !== 'body' && k !== 'reticle' && k !== 'pilot' && k !== 'core');
       const still = animatable.filter((k) => !moved.has(k));
-      report.weapons.push({ id, parts: Object.keys(parts), moved: [...moved], still });
+      const hands = handSpan(vm.current);
+      report.weapons.push({ id, parts: Object.keys(parts), moved: [...moved], still, hands, palmOff });
       if (still.length) report.errors.push(`${id}: ${still.join(',')} never moved`);
+      if (hands === null) report.errors.push(`${id}: nothing holding it`);
+      else if (hands && (hands < 0.12 || hands > 0.75)) report.errors.push(`${id}: hands span ${hands}m`);
+      if (palmOff !== null && palmOff > 0.002) {
+        report.errors.push(`${id}: trigger palm ${palmOff}m off the grip`);
+      }
     }
     vm.dispose();
+
+    // The Galil viewmodel scales and offsets the shared source scene in place,
+    // and the hands are cloned out of that same scene. Equip it first and a
+    // template taken afterwards arrives pre-scaled — hands a quarter the size
+    // they should be, on every weapon picked up after it. Equipping order is
+    // the player's choice, so it has to be tested both ways round.
+    const rigOf = (g) => {
+      const inst = g.userData.hands && g.userData.hands.children[0];
+      return inst ? [...inst.position.toArray(), inst.scale.x].map((v) => +v.toFixed(6)) : null;
+    };
+    const plain = new Viewmodel(stage, mats, null, assets);
+    plain.equip(WEAPONS.shotgun);
+    const first = rigOf(plain.current);
+    plain.dispose();
+
+    const vm2 = new Viewmodel(stage, mats, null, assets);
+    vm2.equip(WEAPONS.rifle);
+    vm2.equip(WEAPONS.shotgun);
+    const after = rigOf(vm2.current);
+    const off2 = palmOffset(vm2.current);
+    report.handRig = { alone: first, afterRifle: after, span: handSpan(vm2.current), palmOffset: off2 };
+    if (off2 === null || off2 > 0.002) {
+      report.errors.push(`shotgun after rifle: trigger palm ${off2}m off the grip`);
+    }
+    if (!first || !after || first.some((v, i) => Math.abs(v - after[i]) > 1e-6)) {
+      report.errors.push(`shotgun's hands land differently after the rifle: ${first} vs ${after}`);
+    }
+    vm2.dispose();
     report.ok = report.errors.length === 0;
     report.done = true;
     return;
@@ -268,11 +351,15 @@ try {
     if (q.get('vo')) cfg.offset = q.get('vo').split(',').map(Number);
     const g = (cfg.asset && (cfg.adopt ? buildAdoptedWeapon(WEAPONS[vm], cfg, assets, mats)
       : buildModelWeapon(WEAPONS[vm], cfg, assets))) || buildWeapon(WEAPONS[vm], mats);
+    if (q.get('nohands') !== '1') attachHands(g, WEAPONS[vm], handsTemplate(assets),
+      { bias: q.get('hb') ? q.get('hb').split(',').map(Number) : null });
     const rig = new THREE.Group();
     rig.add(g);
     rig.scale.setScalar(0.94);
-    rig.position.set(...(q.get('vp') ? q.get('vp').split(',').map(Number)
-      : (g.userData.basePos || [0.136, -0.116, -0.335])));
+    const vmBase = (q.get('vp') ? q.get('vp').split(',').map(Number)
+      : (g.userData.basePos || [0.136, -0.116, -0.335])).slice();
+    vmBase[1] -= g.userData.hipDrop || 0;
+    rig.position.set(...vmBase);
     rig.rotation.set(0.022, 0.055, -0.018);
     scene.add(rig);
     const cam = new THREE.PerspectiveCamera(75, W / H, 0.01, 40);
@@ -291,6 +378,8 @@ try {
     const cfg = MODEL_VIEWMODELS[WEAPONS[ads].model.type];
     const g = (cfg && (cfg.adopt ? buildAdoptedWeapon(WEAPONS[ads], cfg, assets, mats)
       : buildModelWeapon(WEAPONS[ads], cfg, assets))) || buildWeapon(WEAPONS[ads], mats);
+    if (q.get('nohands') !== '1') attachHands(g, WEAPONS[ads], handsTemplate(assets),
+      { pole: q.get('pole') ? q.get('pole').split(',').map(Number) : null });
     const rig = new THREE.Group();
     rig.add(g);
     rig.position.set(...(g.userData.adsPos || [0, -(g.userData.sightY ?? 0.02),
@@ -308,6 +397,80 @@ try {
     renderer.render(scene, cam);
     report.weapons.push({ id: ads, sightY: g.userData.sightY, rear: g.userData.rear,
       adsZ: rig.position.z, muzzle: g.userData.muzzle.toArray() });
+    report.ok = report.errors.length === 0;
+    report.done = true;
+    return;
+  }
+
+  // Hands check: every weapon with the shared arms fitted, at a common scale,
+  // from just behind and above the shooter's wrist. A grip point that is a
+  // centimetre out is invisible in a bounding box and obvious here.
+  if (q.get('hands') === '1') {
+    const tpl = handsTemplate(assets);
+    if (!tpl) { report.errors.push('hands template did not load'); report.done = true; return; }
+    const cols = 4;
+    const CELL = 0.62;
+    const tags = document.getElementById('tags');
+    const camera = new THREE.PerspectiveCamera(30, W / H, 0.05, 40);
+    const rows = Math.ceil(IDS.length / cols);
+
+    IDS.forEach((id, i) => {
+      const spec = WEAPONS[id];
+      const cfg = MODEL_VIEWMODELS[spec.model.type];
+      const g = (cfg && (cfg.adopt ? buildAdoptedWeapon(spec, cfg, assets, mats)
+        : buildModelWeapon(spec, cfg, assets))) || buildWeapon(spec, mats);
+      const holder = attachHands(g, spec, tpl);
+      const pts = g.userData.handPoints;
+      report.weapons.push({
+        id, type: spec.model.type, hands: !!holder,
+        own: !!g.userData.ownHands,
+        grip: pts && pts.grip.toArray().map((v) => +v.toFixed(3)),
+        support: pts && pts.support.toArray().map((v) => +v.toFixed(3)),
+        palmOff: palmOffset(g),
+      });
+      const off = palmOffset(g);
+      if (holder && (off === null || off > 0.002)) {
+        report.errors.push(`${id}: trigger palm ${off}m off the grip`);
+      }
+      if (!holder && !g.userData.ownHands) report.errors.push(`${id}: nothing holding it`);
+
+      // Frame the weapon and the arms together, so a hand left behind shows up
+      // as a hand left behind rather than as an off-centre gun.
+      const cell = new THREE.Group();
+      cell.add(g);
+      const box = new THREE.Box3().setFromObject(cell);
+      const size = box.getSize(new THREE.Vector3());
+      const centre = box.getCenter(new THREE.Vector3());
+      const sc = (CELL * 0.80) / Math.max(size.x, size.y, size.z);
+      g.position.set(-centre.x * sc, -centre.y * sc, -centre.z * sc);
+      g.scale.setScalar(sc);
+      cell.position.set((i % cols - (cols - 1) / 2) * CELL,
+        -(Math.floor(i / cols) - (rows - 1) / 2) * CELL * 1.06, 0);
+      cell.rotation.set(Number(q.get('hp') || 0.26), Number(q.get('hy') || 2.40), 0);
+      scene.add(cell);
+
+      const t = document.createElement('div');
+      t.innerHTML = `<b>${spec.short}</b>${holder ? 'fitted' : g.userData.ownHands ? 'own arms' : 'NONE'}`;
+      tags.appendChild(t);
+      cell.userData.tag = t;
+    });
+
+    // Fit the grid to the frame in both axes, so a one-row subset fills the
+    // viewport instead of sitting as a stripe in the middle of it.
+    const half = Math.tan((camera.fov * Math.PI / 180) / 2);
+    camera.position.set(0, 0, 1.12 * Math.max(
+      (rows * CELL * 1.06 * 0.5 + 0.10) / half,
+      (cols * CELL * 0.5) / (half * camera.aspect),
+    ));
+    camera.lookAt(0, 0, 0);
+    renderer.render(scene, camera);
+    const v = new THREE.Vector3();
+    for (const o of scene.children) {
+      if (!o.userData.tag) continue;
+      v.copy(o.position).project(camera);
+      o.userData.tag.style.left = `${(v.x * 0.5 + 0.5) * 100}%`;
+      o.userData.tag.style.top = `${(-v.y * 0.5 + 0.5) * 100 + 7}%`;
+    }
     report.ok = report.errors.length === 0;
     report.done = true;
     return;

@@ -138,6 +138,8 @@ export function buildModelWeapon(spec, cfg, assets) {
   group.userData.adsPos = cfg.adsPos || null;
   group.userData.spec = spec;
   group.userData.model = true;
+  // This one arrived with its own arms; the shared hands rig leaves it alone.
+  group.userData.ownHands = true;
   return group;
 }
 

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { clamp, damp, lerp } from '../core/util.js';
 import { buildWeapon } from './gunsmith.js';
 import { MODEL_VIEWMODELS, buildModelWeapon, buildAdoptedWeapon } from './viewmodels.js';
+import { handsTemplate, attachHands } from './hands.js';
 
 /** Where a gunsmith-built weapon is held at the hip. Models bring their own. */
 const HIP_POS = new THREE.Vector3(0.136, -0.116, -0.335);
@@ -126,6 +127,11 @@ export class Viewmodel {
       );
     }
 
+    // Arms hang below the gun, so a weapon carrying them rides lower at the
+    // hip. Aiming is untouched: the sights still have to land on the
+    // crosshair, whatever is holding them.
+    this._basePos.y -= g.userData.hipDrop || 0;
+
     // Muzzle marker sits at the end of the barrel.
     this.muzzle.position.copy(g.userData.muzzle || new THREE.Vector3(0, 0, -0.3));
   }
@@ -135,13 +141,23 @@ export class Viewmodel {
     // asset failed to load we fall through rather than leaving the player
     // holding nothing.
     const cfg = MODEL_VIEWMODELS[spec.model.type];
+    let g = null;
     if (cfg && this.assets) {
-      const g = cfg.adopt
+      g = cfg.adopt
         ? buildAdoptedWeapon(spec, cfg, this.assets, this.mats)
         : buildModelWeapon(spec, cfg, this.assets);
-      if (g) return g;
     }
-    return buildWeapon(spec, this.mats);
+    if (!g) g = buildWeapon(spec, this.mats);
+    attachHands(g, spec, this._hands());
+    return g;
+  }
+
+  /** The shared hands rig, lifted from the one authored viewmodel. */
+  _hands() {
+    if (this._handsTpl === undefined) {
+      this._handsTpl = this.assets ? handsTemplate(this.assets) : null;
+    }
+    return this._handsTpl;
   }
 
 

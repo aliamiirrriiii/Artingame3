@@ -289,6 +289,10 @@ function forge() {
     // it to work out where to hold the gun when aiming, so the irons actually
     // land on the crosshair instead of somewhere near it.
     sightY: 0.020,
+    // Where the shooting hand goes. Written by `pistolGrip` so the hands rig
+    // does not have to guess at it from the silhouette; a weapon without one
+    // (the knife) falls back to its bounding box.
+    gripAt: null,
     on(name) { cur = name; return f; },
     add(matKey, geo, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0) {
       wear(geo, WEAR[matKey] || WEAR.gunSteel);
@@ -351,6 +355,8 @@ function ironSights(f, mat, { frontZ, frontY, rearZ, rearY, hood = true, w = 0.0
  * the silhouette convex, which is what a hand actually wraps.
  */
 function pistolGrip(f, mat, { x = 0, y, z, rake = 0.22, w = 0.030, h = 0.098, d = 0.046 }) {
+  // The palm sits on the swell, a little above the grip's centre.
+  f.gripAt = { x, y: y + h * 0.06, z: z - d * 0.06, rake };
   f.add(mat, slab(w, h, d, { r: 0.008 }), x, y, z, rake);
   // Palm swell.
   f.add(mat, slab(w * 1.12, h * 0.55, d * 0.72, { r: 0.010 }), x, y + h * 0.05, z, rake);
@@ -909,6 +915,7 @@ export function buildWeapon(spec, mats) {
   // length, or the stock ends up filling the bottom of the screen.
   group.userData.rear = new THREE.Box3().setFromObject(group).max.z;
   group.userData.glow = glow;
+  group.userData.grip = f.gripAt;
   group.userData.spec = spec;
   return group;
 }

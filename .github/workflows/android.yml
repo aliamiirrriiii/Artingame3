@@ -146,3 +146,9 @@ jobs:
         # every slide, bolt, pump, cylinder and magazine actually moves. The
         # bot run only ever holds the pistol, so nothing else covers these.
         run: node tools/smoke.mjs --page tools/gunpreview.html --viewport 800x500 --params anim=1
+
+      - name: Hands on every weapon
+        # Fits the shared gloves to all twelve and checks the trigger palm
+        # lands exactly on each weapon's grip, including when the one weapon
+        # that owns its own arms is equipped first.
+        run: node tools/smoke.mjs --page tools/gunpreview.html --viewport 800x500 --params hands=1
