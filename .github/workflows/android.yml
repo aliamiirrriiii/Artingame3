@@ -152,3 +152,10 @@ jobs:
         # lands exactly on each weapon's grip, including when the one weapon
         # that owns its own arms is equipped first.
         run: node tools/smoke.mjs --page tools/gunpreview.html --viewport 800x500 --params hands=1
+
+      - name: Improvised melee weapons
+        # The six Poly Haven props: they have to load, align themselves down
+        # the view axis, and end up held by the thin end. Getting the last one
+        # backwards does not look wrong, it puts the whole weapon behind the
+        # camera and leaves a hand holding nothing.
+        run: node tools/smoke.mjs --page tools/gunpreview.html --viewport 1920x380 --params 'pose=bat,pan,drill,sign,ukulele&w=1920&h=380'

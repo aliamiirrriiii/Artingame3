@@ -23,6 +23,32 @@ const expand = (src) => {
   return `${base}/${src.slice(i + 1)}`;
 };
 
+/**
+ * Removes every texture reference from a .gltf.
+ *
+ * The Poly Haven props are mirrored as geometry and a buffer with no images
+ * beside them, but their glTF still names three maps per material. Loaded
+ * as-is, each one is a 404 at runtime and the material comes out with dangling
+ * texture slots. These models are re-finished with the game's own materials
+ * anyway, so the references are dropped here rather than worked around later.
+ */
+function stripTextures(buf, label) {
+  const doc = JSON.parse(buf.toString('utf8'));
+  const had = (doc.images || []).length;
+  delete doc.images;
+  delete doc.textures;
+  delete doc.samplers;
+  for (const m of doc.materials || []) {
+    delete m.normalTexture;
+    delete m.occlusionTexture;
+    delete m.emissiveTexture;
+    const pbr = m.pbrMetallicRoughness;
+    if (pbr) { delete pbr.baseColorTexture; delete pbr.metallicRoughnessTexture; }
+  }
+  if (had) console.log(`         stripped ${had} texture reference(s) from ${label}`);
+  return Buffer.from(JSON.stringify(doc));
+}
+
 const exists = async (p) => { try { return (await stat(p)).size > 0; } catch { return false; } };
 
 const kb = (n) => `${(n / 1024).toFixed(0)} KB`;
@@ -40,8 +66,9 @@ for (const asset of manifest.assets) {
   try {
     const res = await fetch(url, { redirect: 'follow' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const buf = Buffer.from(await res.arrayBuffer());
+    let buf = Buffer.from(await res.arrayBuffer());
     if (buf.length === 0) throw new Error('empty body');
+    if (asset.strip === 'textures') buf = stripTextures(buf, asset.dst);
     await mkdir(dirname(dst), { recursive: true });
     await writeFile(dst, buf);
     downloaded++; bytes += buf.length;

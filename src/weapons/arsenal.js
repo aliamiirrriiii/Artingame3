@@ -210,6 +210,105 @@ export const WEAPONS = {
     boxWeight: 0.6, price: 0,
     tip: 'Hold to charge, release to erase everything in a straight line.',
   },
+
+  // ------------------------------------------------------ improvised melee
+  /*
+   * Whatever was lying around. These are not bought — they are picked up off
+   * the street, swung until they break, and thrown away, which is the loop the
+   * whole game is built around.
+   *
+   * The fields a gun does not have:
+   *
+   *   reach      metres from the eye the swing carries.
+   *   arcDeg     how wide the sweep is. A frying pan clears a doorway; a drill
+   *              hits one zombie and nothing either side of it.
+   *   maxTargets how many bodies one swing can carry through.
+   *   durability swings before it breaks. The whole point of a disposable
+   *              weapon is that you are always about to lose it.
+   *   heft       0..1, how much the weapon throws a body and how slow it feels.
+   *   sever      how readily it takes limbs off, independent of damage — a
+   *              machete at half a sledgehammer's damage takes twice the arms.
+   */
+
+  bat: {
+    id: 'bat', name: 'Baseball Bat', short: 'BAT',
+    kind: 'melee', slot: 0,
+    damage: 210, headMul: 2.0,
+    rpm: 78, range: 2.6, arc: 0.48,
+    reach: 2.6, arcDeg: 55, maxTargets: 3, durability: 40, heft: 0.7, sever: 0.15,
+    magSize: Infinity, reserve: Infinity, infinite: true,
+    stagger: 0.6, knockback: 3.4,
+    recoil: { pitch: 0.02, yaw: 0.012, kick: 0.18 }, shake: 0.10,
+    automatic: true,
+    sound: { type: 'swing' },
+    model: { type: 'bat' },
+    boxWeight: 0, price: 0, pickup: 5,
+    tip: 'Aluminium, and it rings when it connects. The one everybody reaches for.',
+  },
+
+  pan: {
+    id: 'pan', name: 'Frying Pan', short: 'PAN',
+    kind: 'melee', slot: 0,
+    damage: 190, headMul: 2.2,
+    rpm: 88, range: 2.0, arc: 0.62,
+    reach: 2.0, arcDeg: 72, maxTargets: 3, durability: 55, heft: 0.6, sever: 0.05,
+    magSize: Infinity, reserve: Infinity, infinite: true,
+    stagger: 0.7, knockback: 3.0,
+    recoil: { pitch: 0.018, yaw: 0.014, kick: 0.16 }, shake: 0.09,
+    automatic: true,
+    sound: { type: 'swing' },
+    model: { type: 'pan' },
+    boxWeight: 0, price: 0, pickup: 4,
+    tip: 'Short, wide and heavy. Clears a doorway and survives longer than it should.',
+  },
+
+  drill: {
+    id: 'drill', name: 'Power Drill', short: 'DRILL',
+    kind: 'melee', slot: 0,
+    damage: 74, headMul: 3.0,
+    rpm: 320, range: 1.7, arc: 0.16,
+    reach: 1.7, arcDeg: 16, maxTargets: 1, durability: 30, heft: 0.15, sever: 0.30,
+    magSize: Infinity, reserve: Infinity, infinite: true,
+    stagger: 0.05, knockback: 0.2,
+    recoil: { pitch: 0.004, yaw: 0.004, kick: 0.04 }, shake: 0.03,
+    automatic: true,
+    sound: { type: 'swing' },
+    model: { type: 'drill' },
+    boxWeight: 0, price: 0, pickup: 3,
+    tip: 'Held against a skull rather than swung. Hits one thing, very fast.',
+  },
+
+  sign: {
+    id: 'sign', name: 'Wet Floor Sign', short: 'SIGN',
+    kind: 'melee', slot: 0,
+    damage: 88, headMul: 1.4,
+    rpm: 70, range: 3.0, arc: 0.72,
+    reach: 3.0, arcDeg: 82, maxTargets: 5, durability: 25, heft: 0.5, sever: 0.02,
+    magSize: Infinity, reserve: Infinity, infinite: true,
+    stagger: 1.0, knockback: 4.2,
+    recoil: { pitch: 0.016, yaw: 0.018, kick: 0.14 }, shake: 0.08,
+    automatic: true,
+    sound: { type: 'swing' },
+    model: { type: 'sign' },
+    boxWeight: 0, price: 0, pickup: 5,
+    tip: 'Reaches further than anything else and kills almost nothing. Knocks a whole rank flat.',
+  },
+
+  ukulele: {
+    id: 'ukulele', name: 'Ukulele', short: 'UKE',
+    kind: 'melee', slot: 0,
+    damage: 34, headMul: 1.5,
+    rpm: 96, range: 2.1, arc: 0.40,
+    reach: 2.1, arcDeg: 44, maxTargets: 2, durability: 6, heft: 0.25, sever: 0.02,
+    magSize: Infinity, reserve: Infinity, infinite: true,
+    stagger: 0.3, knockback: 1.4,
+    recoil: { pitch: 0.01, yaw: 0.01, kick: 0.10 }, shake: 0.05,
+    automatic: true,
+    sound: { type: 'swing' },
+    model: { type: 'ukulele' },
+    boxWeight: 0, price: 0, pickup: 2,
+    tip: 'Six swings and it is kindling. Take it anyway.',
+  },
 };
 
 export const WEAPON_LIST = Object.values(WEAPONS);

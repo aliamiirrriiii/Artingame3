@@ -313,6 +313,49 @@ export class MaterialLibrary {
       envMapIntensity: 1.2,
     }));
 
+    /*
+     * Improvised melee finishes.
+     *
+     * The Poly Haven props arrive as one material each with no texture images,
+     * so each weapon gets exactly one finish and it has to carry the whole
+     * object. These are deliberately further apart from each other than the
+     * gun finishes are: at a glance across a cluttered street you have to be
+     * able to tell a bat from a pipe from a sign, and colour is the only
+     * channel with the range to do that.
+     */
+
+    // Bare aluminium: the bat. Bright, brushed, and scratched from use.
+    this.set('meleeAlu', gun({
+      color: 0x9aa0a6, roughness: 0.34, metalness: 1.0,
+      normalMap: rep(gunN, 24, 24), normalScale: new THREE.Vector2(0.7, 0.7),
+      roughnessMap: rep(a.tex('roughDetail'), 18, 18),
+      envMapIntensity: 1.15,
+    }));
+
+    // Painted and chipped steel tube: chair frames, crowbars, pipes.
+    this.set('meleeSteel', gun({
+      color: 0x4a5157, roughness: 0.58, metalness: 0.85,
+      normalMap: rep(gunN, 22, 22), normalScale: new THREE.Vector2(0.6, 0.6),
+      roughnessMap: rep(a.tex('roughDetail'), 14, 14),
+    }));
+
+    // Safety yellow: the wet-floor sign, the drill's shell. Injection-moulded
+    // plastic, so almost no specular break-up and no metalness at all.
+    this.set('meleeYellow', gun({
+      color: 0xc9a01c, roughness: 0.46, metalness: 0.0,
+      normalMap: rep(a.tex('carbonNormal'), 40, 40),
+      normalScale: new THREE.Vector2(0.22, 0.22),
+      envMapIntensity: 1.05,
+    }));
+
+    // Light ash and plywood: bat handles, axe hafts, a ukulele.
+    this.set('meleeWood', gun({
+      color: 0x8a6640, roughness: 0.60, metalness: 0.0,
+      map: rep(a.tex('woodAlbedo'), 3.5, 3.5),
+      normalMap: rep(woodN, 3.5, 3.5), normalScale: new THREE.Vector2(0.45, 0.45),
+      envMapIntensity: 1.1,
+    }));
+
     this.set('gunBrass', gun({
       color: 0xc9973b, roughness: 0.30, metalness: 1.0, envMapIntensity: 1.3,
     }));

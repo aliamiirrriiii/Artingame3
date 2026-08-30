@@ -39,6 +39,8 @@ import { handsTemplate, attachHands } from '../src/weapons/hands.js';
  *   ?only=rifle,shotgun   preview a subset
  *   ?view=1               side elevation instead of three-quarter
  *   ?hb=0,-0.01,0         nudge the hands off the fitted grip, to tune it
+ *   ?pose=bat             twelve first-person rest poses of one weapon, in one
+ *                         frame, for choosing how a melee weapon is carried
  *   ?hands=1              every weapon with the shared gloves fitted to it,
  *                         seen over the shooter's own knuckles — the only way
  *                         to tell a hand wrapped round a grip from one buried
@@ -340,6 +342,100 @@ try {
     return;
   }
 
+  /*
+   * Rest-pose contact sheet. A melee weapon is not aimed, so where it sits is
+   * two free angles and a position, and each guess costs a render. This draws
+   * twelve first-person views into one frame through the scissor rectangle —
+   * same weapon, same hands, same field of view, twelve rest rotations — so a
+   * pose gets chosen by looking at a sheet rather than by twelve round trips.
+   *
+   *   ?pose=bat&px=0.24,-0.34,-0.30&rz=0.15
+   */
+  if (q.get('pose')) {
+    // One weapon across a grid of rest rotations, or — when the list has more
+    // than one entry — one rest rotation across a row of weapons.
+    const ids = q.get('pose').split(',').filter((x) => WEAPONS[x]);
+    if (!ids.length) { report.errors.push(`no weapon "${q.get('pose')}"`); report.done = true; return; }
+    const many = ids.length > 1;
+    const tpl = handsTemplate(assets);
+    const base = (q.get('px') ? q.get('px').split(',').map(Number) : null);
+    const rz = Number(q.get('rz') ?? 0.15);
+    const RX = many ? [0] : (q.get('rxs') || '0.5,0.85,1.2').split(',').map(Number);
+    const RY = many ? ids.map((_, i) => i) : (q.get('rys') || '-0.15,-0.45,-0.75,-1.05').split(',').map(Number);
+
+    const cam = new THREE.PerspectiveCamera(75, (W / RY.length) / (H / RX.length), 0.01, 40);
+    // Pull the eye back to see where the weapon actually is. At the real eye
+    // position a pose that is wrong is simply not on screen, which tells you
+    // nothing about which way to move it.
+    cam.position.z = Number(q.get('back') || 0);
+    const tags = document.getElementById('tags');
+    renderer.setScissorTest(true);
+    renderer.setClearColor(0x101216, 1);
+    renderer.clear();
+
+    for (let r = 0; r < RX.length; r++) {
+      for (let c = 0; c < RY.length; c++) {
+        const spec = WEAPONS[many ? ids[c] : ids[0]];
+        const cfg = MODEL_VIEWMODELS[spec.model.type];
+        const g = (cfg && (cfg.adopt ? buildAdoptedWeapon(spec, cfg, assets, mats)
+          : buildModelWeapon(spec, cfg, assets))) || buildWeapon(spec, mats);
+        attachHands(g, spec, tpl);
+        if (!many) g.rotation.set(RX[r], RY[c], rz);
+        const rig = new THREE.Group();
+        rig.add(g);
+        rig.scale.setScalar(0.94);
+        const p = base || g.userData.basePos || [0.136, -0.116, -0.335];
+        rig.position.set(p[0], p[1] - (g.userData.hipDrop || 0), p[2]);
+        rig.rotation.set(0.022, 0.055, -0.018);
+        scene.add(rig);
+
+        const cw = Math.floor(W / RY.length), ch = Math.floor(H / RX.length);
+        const x = c * cw, y = H - (r + 1) * ch;
+        renderer.setViewport(x, y, cw, ch);
+        renderer.setScissor(x, y, cw, ch);
+        renderer.render(scene, cam);
+
+        // The failure this mode exists to catch: a weapon aligned by the wrong
+        // end sits behind the eye, and the render looks like a hand holding
+        // nothing rather than like anything obviously broken.
+        rig.updateMatrixWorld(true);
+        const bb = new THREE.Box3().setFromObject(g.userData.parts.body);
+        const held = { id: spec.id, min: bb.min.toArray().map((v) => +v.toFixed(3)),
+          max: bb.max.toArray().map((v) => +v.toFixed(3)) };
+        report.weapons.push(held);
+        if (bb.max.z > -0.05) report.errors.push(`${spec.id}: held behind the eye (z up to ${held.max[2]})`);
+        if (bb.min.z < -2.0) report.errors.push(`${spec.id}: reaches ${(-bb.min.z).toFixed(2)}m in front of the eye`);
+        if (!isFinite(bb.min.x)) report.errors.push(`${spec.id}: nothing in hand`);
+        // And the other half of "held wrong": swung so far to the strong side
+        // that the weapon is off the edge of a 16:9 screen rather than in it.
+        if (bb.min.x > 0.42) report.errors.push(`${spec.id}: carried off the right of the screen (x from ${held.min[0]})`);
+
+        if (!report.poseDbg) {
+          rig.updateMatrixWorld(true);
+          const bb = new THREE.Box3().setFromObject(g.userData.parts.body);
+          report.poseDbg = {
+            body: [bb.min.toArray().map(v => +v.toFixed(3)), bb.max.toArray().map(v => +v.toFixed(3))],
+            gripAt: g.userData.handPoints && g.userData.handPoints.grip.toArray().map(v => +v.toFixed(3)),
+            rot: g.rotation.toArray().slice(0, 3).map(v => +(+v).toFixed(3)),
+            rigPos: rig.position.toArray().map(v => +v.toFixed(3)),
+          };
+        }
+        scene.remove(rig);
+
+        const t = document.createElement('div');
+        t.innerHTML = many ? `<b>${spec.short}</b>` : `<b>${RX[r].toFixed(2)} / ${RY[c].toFixed(2)}</b>`;
+        t.style.left = `${((c + 0.5) / RY.length) * 100}%`;
+        t.style.top = `${((r + 0.06) / RX.length) * 100}%`;
+        tags.appendChild(t);
+      }
+    }
+    renderer.setScissorTest(false);
+    report.pose = { ids, base, rz, rx: RX, ry: RY };
+    report.ok = report.errors.length === 0;
+    report.done = true;
+    return;
+  }
+
   // Hip view: exactly what the player sees, at the game's field of view, with
   // the calibration numbers overridable from the query string. Calibrating a
   // downloaded viewmodel is a handful of guesses, and this is the loop that
@@ -347,6 +443,8 @@ try {
   const vm = q.get('vm');
   if (vm && WEAPONS[vm]) {
     const cfg = { ...(MODEL_VIEWMODELS[WEAPONS[vm].model.type] || {}) };
+    if (q.get('ge')) cfg.gripEnd = q.get('ge');
+    if (q.get('gi')) cfg.gripInset = Number(q.get('gi'));
     if (q.get('vs')) cfg.scale = Number(q.get('vs'));
     if (q.get('vo')) cfg.offset = q.get('vo').split(',').map(Number);
     const g = (cfg.asset && (cfg.adopt ? buildAdoptedWeapon(WEAPONS[vm], cfg, assets, mats)
@@ -356,6 +454,7 @@ try {
     const rig = new THREE.Group();
     rig.add(g);
     rig.scale.setScalar(0.94);
+    if (q.get('vr')) g.rotation.set(...q.get('vr').split(',').map(Number));
     const vmBase = (q.get('vp') ? q.get('vp').split(',').map(Number)
       : (g.userData.basePos || [0.136, -0.116, -0.335])).slice();
     vmBase[1] -= g.userData.hipDrop || 0;

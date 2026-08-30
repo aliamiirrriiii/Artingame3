@@ -83,6 +83,15 @@ const FIT = {
   tesla:    { span: 0.170 },
   launcher: { span: 0.185 },
   railgun:  { span: 0.205 },
+
+  // Improvised melee. A bat is held with both fists together at the butt, a
+  // wet-floor sign at two points a foot apart, a drill in one hand — the span
+  // is most of what tells one hold from another.
+  bat:      { span: 0.135 },
+  pan:      { span: 0.105 },
+  drill:    { oneHanded: true },
+  sign:     { span: 0.300 },
+  ukulele:  { span: 0.260 },
 };
 
 /**

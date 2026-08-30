@@ -5,7 +5,8 @@
     "khronos": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models",
     "gfonts": "https://raw.githubusercontent.com/google/fonts/main/ofl",
     "enari": "https://raw.githubusercontent.com/iErcann/enari-engine/main/public",
-    "steeltide": "https://raw.githubusercontent.com/AetherRadar/operation-steel-tide/main/assets/models/steel_tide_reloadable_weapons"
+    "steeltide": "https://raw.githubusercontent.com/AetherRadar/operation-steel-tide/main/assets/models/steel_tide_reloadable_weapons",
+    "polyhaven": "https://raw.githubusercontent.com/EMMA019/KAGRA/master/assets/library/polyhaven/props"
   },
   "assets": [
     {
@@ -259,6 +260,71 @@
       "dst": "assets/models/wpn_sniper.glb",
       "license": "CC0 1.0 Universal — weapon bodies by Quaternius (Ultimate Guns Pack, quaternius.com); reload mechanism geometry, sockets and GLB composition by Operation Steel Tide (MIT), which documents the provenance in docs/CONTENT_PROVENANCE.md. Reached through that repository because quaternius.com and poly.pizza are unreachable from the build sandbox.",
       "use": "Bolt-action sniper viewmodel, with bipod, scope and a separated magazine."
+    },
+    {
+      "src": "polyhaven:baseball_bat/baseball_bat_1k.gltf",
+      "dst": "assets/models/melee/baseball_bat.gltf",
+      "license": "CC0 1.0 Universal — Poly Haven (polyhaven.com), scanned and modelled by their asset team. Reached through EMMA019/KAGRA, which mirrors the glTF and its buffer, because polyhaven.com and cdn.polyhaven.com are unreachable from the build sandbox. That mirror carries geometry and UVs but no texture images, so these are re-finished with the game's own materials on load.",
+      "use": "Melee weapon: an aluminium baseball bat, 8,016 vertices of scanned geometry. The centrepiece of the improvised arsenal.",
+      "strip": "textures"
+    },
+    {
+      "src": "polyhaven:baseball_bat/baseball_bat.bin",
+      "dst": "assets/models/melee/baseball_bat.bin",
+      "license": "CC0 1.0 Universal — Poly Haven (polyhaven.com), scanned and modelled by their asset team. Reached through EMMA019/KAGRA, which mirrors the glTF and its buffer, because polyhaven.com and cdn.polyhaven.com are unreachable from the build sandbox. That mirror carries geometry and UVs but no texture images, so these are re-finished with the game's own materials on load.",
+      "use": "Vertex buffer for baseball_bat.gltf."
+    },
+    {
+      "src": "polyhaven:brass_pan_01/brass_pan_01_1k.gltf",
+      "dst": "assets/models/melee/brass_pan_01.gltf",
+      "license": "CC0 1.0 Universal — Poly Haven (polyhaven.com), scanned and modelled by their asset team. Reached through EMMA019/KAGRA, which mirrors the glTF and its buffer, because polyhaven.com and cdn.polyhaven.com are unreachable from the build sandbox. That mirror carries geometry and UVs but no texture images, so these are re-finished with the game's own materials on load.",
+      "use": "Melee weapon: a heavy brass frying pan, 13,020 vertices. Short reach, wide arc, and it rings.",
+      "strip": "textures"
+    },
+    {
+      "src": "polyhaven:brass_pan_01/brass_pan_01.bin",
+      "dst": "assets/models/melee/brass_pan_01.bin",
+      "license": "CC0 1.0 Universal — Poly Haven (polyhaven.com), scanned and modelled by their asset team. Reached through EMMA019/KAGRA, which mirrors the glTF and its buffer, because polyhaven.com and cdn.polyhaven.com are unreachable from the build sandbox. That mirror carries geometry and UVs but no texture images, so these are re-finished with the game's own materials on load.",
+      "use": "Vertex buffer for brass_pan_01.gltf."
+    },
+    {
+      "src": "polyhaven:Drill_01/Drill_01_1k.gltf",
+      "dst": "assets/models/melee/drill_01.gltf",
+      "license": "CC0 1.0 Universal — Poly Haven (polyhaven.com), scanned and modelled by their asset team. Reached through EMMA019/KAGRA, which mirrors the glTF and its buffer, because polyhaven.com and cdn.polyhaven.com are unreachable from the build sandbox. That mirror carries geometry and UVs but no texture images, so these are re-finished with the game's own materials on load.",
+      "use": "Melee weapon: a cordless power drill, 8,778 vertices. Held against a target rather than swung.",
+      "strip": "textures"
+    },
+    {
+      "src": "polyhaven:Drill_01/Drill_01.bin",
+      "dst": "assets/models/melee/Drill_01.bin",
+      "license": "CC0 1.0 Universal — Poly Haven (polyhaven.com), scanned and modelled by their asset team. Reached through EMMA019/KAGRA, which mirrors the glTF and its buffer, because polyhaven.com and cdn.polyhaven.com are unreachable from the build sandbox. That mirror carries geometry and UVs but no texture images, so these are re-finished with the game's own materials on load.",
+      "use": "Vertex buffer for drill_01.gltf."
+    },
+    {
+      "src": "polyhaven:WetFloorSign_01/WetFloorSign_01_1k.gltf",
+      "dst": "assets/models/melee/wetfloorsign_01.gltf",
+      "license": "CC0 1.0 Universal — Poly Haven (polyhaven.com), scanned and modelled by their asset team. Reached through EMMA019/KAGRA, which mirrors the glTF and its buffer, because polyhaven.com and cdn.polyhaven.com are unreachable from the build sandbox. That mirror carries geometry and UVs but no texture images, so these are re-finished with the game's own materials on load.",
+      "use": "Melee weapon: a folding wet-floor sign, 684 vertices. Long, light and unwieldy — knocks a crowd down rather than killing it.",
+      "strip": "textures"
+    },
+    {
+      "src": "polyhaven:WetFloorSign_01/WetFloorSign_01.bin",
+      "dst": "assets/models/melee/WetFloorSign_01.bin",
+      "license": "CC0 1.0 Universal — Poly Haven (polyhaven.com), scanned and modelled by their asset team. Reached through EMMA019/KAGRA, which mirrors the glTF and its buffer, because polyhaven.com and cdn.polyhaven.com are unreachable from the build sandbox. That mirror carries geometry and UVs but no texture images, so these are re-finished with the game's own materials on load.",
+      "use": "Vertex buffer for wetfloorsign_01.gltf."
+    },
+    {
+      "src": "polyhaven:Ukulele_01/Ukulele_01_1k.gltf",
+      "dst": "assets/models/melee/ukulele_01.gltf",
+      "license": "CC0 1.0 Universal — Poly Haven (polyhaven.com), scanned and modelled by their asset team. Reached through EMMA019/KAGRA, which mirrors the glTF and its buffer, because polyhaven.com and cdn.polyhaven.com are unreachable from the build sandbox. That mirror carries geometry and UVs but no texture images, so these are re-finished with the game's own materials on load.",
+      "use": "Melee weapon: a ukulele, 26,736 vertices. Does almost no damage and breaks in four hits, which is the joke.",
+      "strip": "textures"
+    },
+    {
+      "src": "polyhaven:Ukulele_01/Ukulele_01.bin",
+      "dst": "assets/models/melee/Ukulele_01.bin",
+      "license": "CC0 1.0 Universal — Poly Haven (polyhaven.com), scanned and modelled by their asset team. Reached through EMMA019/KAGRA, which mirrors the glTF and its buffer, because polyhaven.com and cdn.polyhaven.com are unreachable from the build sandbox. That mirror carries geometry and UVs but no texture images, so these are re-finished with the game's own materials on load.",
+      "use": "Vertex buffer for ukulele_01.gltf."
     }
   ]
 }

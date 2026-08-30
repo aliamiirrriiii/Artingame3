@@ -54,6 +54,21 @@
       ]
     },
     {
+      "license": "CC0 1.0 Universal — Poly Haven (polyhaven.com), scanned and modelled by their asset team. Reached through EMMA019/KAGRA, which mirrors the glTF and its buffer, because polyhaven.com and cdn.polyhaven.com are unreachable from the build sandbox. That mirror carries geometry and UVs but no texture images, so these are re-finished with the game's own materials on load.",
+      "files": [
+        "models/melee/Drill_01.bin",
+        "models/melee/Ukulele_01.bin",
+        "models/melee/WetFloorSign_01.bin",
+        "models/melee/baseball_bat.bin",
+        "models/melee/baseball_bat.gltf",
+        "models/melee/brass_pan_01.bin",
+        "models/melee/brass_pan_01.gltf",
+        "models/melee/drill_01.gltf",
+        "models/melee/ukulele_01.gltf",
+        "models/melee/wetfloorsign_01.gltf"
+      ]
+    },
+    {
       "license": "CC0 1.0 Universal — weapon bodies by Quaternius (Ultimate Guns Pack, quaternius.com); reload mechanism geometry, sockets and GLB composition by Operation Steel Tide (MIT), which documents the provenance in docs/CONTENT_PROVENANCE.md. Reached through that repository because quaternius.com and poly.pizza are unreachable from the build sandbox.",
       "files": [
         "models/wpn_pistol.glb",

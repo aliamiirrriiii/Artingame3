@@ -59,6 +59,59 @@ export const MODEL_VIEWMODELS = {
     motion: { bolt: { travel: 0.030, time: 0.30 }, magDrop: 0.14 },
   },
 
+  /*
+   * Improvised melee, from Poly Haven. Scanned geometry in real metres — a
+   * baseball bat arrives 913 mm long — so there is no scale to guess at; what
+   * has to be said per weapon is which way it was modelled and where the hand
+   * goes on it.
+   *
+   * `melee` changes the placement rule. A gun is shouldered, so the adopted
+   * path puts its rear face on the rig origin and its top at the sight line. A
+   * bat is held in a fist: the origin goes at the grip, a little way in from
+   * the butt, and the whole thing hangs forward from there.
+   */
+  bat: {
+    adopt: true, melee: true, asset: 'meleeBat',
+    scale: 1,
+    gripInset: 0.10,
+    basePos: [0.20, -0.30, -0.34], adsPos: [0.16, -0.26, -0.40],
+  },
+
+  pan: {
+    adopt: true, melee: true, asset: 'meleePan',
+    scale: 1,
+    gripInset: 0.06,
+    basePos: [0.22, -0.28, -0.32], adsPos: [0.17, -0.24, -0.38],
+  },
+
+  drill: {
+    adopt: true, melee: true, asset: 'meleeDrill',
+    // Modelled upright with the body along X: turn the body forward and stand
+    // the grip under it.
+    scale: 1, rotation: [0, Math.PI / 2, 0],
+    gripInset: 0.05,
+    basePos: [0.20, -0.22, -0.34], adsPos: [0.14, -0.20, -0.40],
+  },
+
+  sign: {
+    adopt: true, melee: true, asset: 'meleeSign',
+    scale: 1,
+    gripInset: 0.08,
+    // Longer weapons need a shallower carry angle or they swing clean off the
+    // right of the screen: the rest rotation pivots about the hand, so the
+    // further the tip is from it the further sideways it travels.
+    rest: [0.86, -0.42, 0.16],
+    basePos: [0.16, -0.30, -0.32], adsPos: [0.13, -0.26, -0.38],
+  },
+
+  ukulele: {
+    adopt: true, melee: true, asset: 'meleeUkulele',
+    scale: 1,
+    gripInset: 0.08,
+    rest: [0.88, -0.55, 0.16],
+    basePos: [0.18, -0.28, -0.32], adsPos: [0.14, -0.24, -0.38],
+  },
+
   rifle: {
     asset: 'viewmodelRifle',
     /* Freeze the hold animation here. Early in the clip, before the authored
@@ -188,6 +241,13 @@ const FINISH = {
   wood: 'gunWood',
   glass: 'gunGlass',
   brass: 'gunBrass',
+  // Poly Haven names each prop's single material after the prop, so the map
+  // doubles as the list of which improvised weapon is made of what.
+  baseball_bat: 'meleeAlu',
+  brass_pan_01: 'gunBrass',
+  drill_01: 'meleeYellow',
+  wetfloorsign_01: 'meleeYellow',
+  ukulele_01: 'meleeWood',
 };
 
 /** Anything unnamed is judged on how metallic its author made it. */
@@ -263,6 +323,76 @@ function muzzleOf(root) {
     }
   });
   return n ? acc.multiplyScalar(1 / n) : new THREE.Vector3(0, 0, minZ);
+}
+
+/**
+ * Where a hand goes on the slab of geometry around the plane z.
+ *
+ * The average of that slab, snapped to the nearest actual vertex. The average
+ * alone is right for anything with a shaft — a bat, a pan handle, a ukulele
+ * neck — and badly wrong for a chair, whose four legs average to the empty
+ * square between them, which is where the hand then closes on nothing.
+ */
+function sectionCentre(root, z, half) {
+  const v = new THREE.Vector3();
+  const pts = [];
+  let x = 0, y = 0;
+  root.updateMatrixWorld(true);
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    const pos = o.geometry.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+      if (Math.abs(v.z - z) > half) continue;
+      pts.push(v.x, v.y);
+      x += v.x; y += v.y;
+    }
+  });
+  const n = pts.length / 2;
+  if (!n) return { x: 0, y: 0 };
+  x /= n; y /= n;
+  let best = Infinity, bx = x, by = y;
+  for (let i = 0; i < n; i++) {
+    const dx = pts[i * 2] - x, dy = pts[i * 2 + 1] - y;
+    const d = dx * dx + dy * dy;
+    if (d < best) { best = d; bx = pts[i * 2]; by = pts[i * 2 + 1]; }
+  }
+  return { x: bx, y: by };
+}
+
+/** Turns an object so its longest dimension runs down -Z. */
+function alignLongAxis(root) {
+  const size = new THREE.Box3().setFromObject(root).getSize(new THREE.Vector3());
+  if (size.x > size.y && size.x > size.z) root.rotation.y += Math.PI / 2;
+  else if (size.y > size.z) root.rotation.x -= Math.PI / 2;
+  root.updateMatrixWorld(true);
+}
+
+/**
+ * Is the thin end of this object the one at +Z?
+ *
+ * A handle is the narrow end of the thing: a bat tapers to its knob, a pan to
+ * its handle, a ukulele to its neck. Comparing how far the geometry spreads
+ * from the long axis in a slab at each end says which end a hand goes on,
+ * without anyone having to know how the model was exported.
+ */
+function thinEndIsMax(root, box) {
+  const len = box.max.z - box.min.z;
+  const band = Math.max(0.02, len * 0.18);
+  const v = new THREE.Vector3();
+  let loR = 0, hiR = 0;
+  root.updateMatrixWorld(true);
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    const pos = o.geometry.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+      const r = Math.hypot(v.x, v.y);
+      if (v.z <= box.min.z + band) loR = Math.max(loR, r);
+      else if (v.z >= box.max.z - band) hiR = Math.max(hiR, r);
+    }
+  });
+  return hiR <= loR;
 }
 
 /**
@@ -374,10 +504,41 @@ export function buildAdoptedWeapon(spec, cfg, assets, mats) {
   src.position.set(0, 0, 0);
   src.updateMatrixWorld(true);
 
+  // A melee weapon with no rotation given is laid along the view axis by
+  // measurement. Reading the orientation off the buffer is not enough: a glTF
+  // node can carry its own rotation — the Poly Haven bat's does, a quarter
+  // turn about X — so the accessors say the bat runs along Z while the scene
+  // stands it on end. Whichever axis it is longest on in the scene becomes -Z.
+  if (cfg.melee && !cfg.rotation) alignLongAxis(src);
+
   const box = new THREE.Box3().setFromObject(src);
   const centre = box.getCenter(new THREE.Vector3());
   const sightY = cfg.sightY ?? 0.02;
-  src.position.set(-centre.x, -box.max.y + sightY, -box.max.z);
+  if (cfg.melee) {
+    // Held in a fist rather than shouldered: the origin sits on the grip, a
+    // little way in from the butt end, and the tool hangs forward from it.
+    //
+    // Which end the grip is on is measured, not declared. Every one of these
+    // props was modelled facing whichever way its author felt like, and
+    // getting it backwards does not look wrong — it puts the whole weapon
+    // behind the camera, so all you see is a hand holding nothing.
+    const back = cfg.gripEnd ? cfg.gripEnd === 'max' : thinEndIsMax(src, box);
+    const gz = back ? box.max.z - (cfg.gripInset ?? 0.10) : box.min.z + (cfg.gripInset ?? 0.10);
+    // Across the grip, centre on what is actually there at that station rather
+    // than on the object as a whole. A bat is a rod on its own centre line and
+    // the two agree; a chair is held by a leg, and centring the chair puts the
+    // hand in the air a foot from the leg it is supposed to be holding.
+    const gc = sectionCentre(src, gz, Math.max(0.03, (box.max.z - box.min.z) * 0.10));
+    src.position.set(-gc.x, -gc.y, -gz);
+    // The tool has to hang forward, down -Z, whichever end the handle was on.
+    if (!back) {
+      src.rotation.y += Math.PI;
+      src.position.x = -src.position.x;
+      src.position.z = -src.position.z;
+    }
+  } else {
+    src.position.set(-centre.x, -box.max.y + sightY, -box.max.z);
+  }
   src.updateMatrixWorld(true);
 
   // The muzzle is where the barrel ends: average the vertices at the far end
@@ -390,6 +551,27 @@ export function buildAdoptedWeapon(spec, cfg, assets, mats) {
   group.add(holder);
   group.userData.muzzle = muzzle;
   group.userData.parts = parts;
+  if (cfg.melee) {
+    // The hands rig fits the trigger palm to this point. For a melee weapon
+    // that is the origin itself, because the origin was just put on the grip.
+    group.userData.grip = { x: 0, y: 0, z: 0 };
+    group.userData.melee = true;
+    /*
+     * The ready stance, baked into the weapon rather than the rig.
+     *
+     * A gun points where you are looking; a bat does not. Held down the view
+     * axis it is a metre-long cylinder filling the middle of the screen with
+     * its own end cap. It has to be carried up and across — cocked, off to the
+     * strong side, out of the sight line — so that the swing has somewhere to
+     * come from and you can still see what you are hitting.
+     */
+    group.rotation.set(...(cfg.rest || [0.90, -0.75, 0.18]));
+    group.userData.rest = group.rotation.clone();
+    // Where the business end is, for impact effects and for the reach the
+    // swing actually has.
+    const after = new THREE.Box3().setFromObject(src);
+    group.userData.tip = new THREE.Vector3(0, 0, after.min.z);
+  }
   // Travel distances are authored in metres, but the parts they move live
   // under a node scaled by `s`, so a 26 mm slide throw would come out at 14 mm.
   const motion = {};

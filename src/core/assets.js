@@ -238,6 +238,13 @@ export const MANIFEST = {
     { key: 'wpnPistol', url: 'assets/models/wpn_pistol.glb' },
     { key: 'wpnSmg', url: 'assets/models/wpn_smg.glb' },
     { key: 'wpnSniper', url: 'assets/models/wpn_sniper.glb' },
+    // Improvised melee, from Poly Haven. Geometry and UVs only — the mirror
+    // carries no texture images, so these are re-finished on load.
+    { key: 'meleeBat', url: 'assets/models/melee/baseball_bat.gltf' },
+    { key: 'meleePan', url: 'assets/models/melee/brass_pan_01.gltf' },
+    { key: 'meleeDrill', url: 'assets/models/melee/drill_01.gltf' },
+    { key: 'meleeSign', url: 'assets/models/melee/wetfloorsign_01.gltf' },
+    { key: 'meleeUkulele', url: 'assets/models/melee/ukulele_01.gltf' },
   ],
   hdri: [
     { key: 'day', url: 'assets/hdri/day_1k.hdr' },
