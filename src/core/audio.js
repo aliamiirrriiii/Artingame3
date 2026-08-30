@@ -333,6 +333,60 @@ export class AudioEngine {
     }
   }
 
+  /**
+   * A limb coming off, or a head. Longer and wetter than `flesh`: a tearing
+   * band of filtered noise, a bone snap on top, and a low thud underneath.
+   *
+   * This is the sound the whole loop pays off on, so it is deliberately the
+   * loudest thing in the impact set.
+   */
+  gore(pos, heavy = false) {
+    if (!this._canPlay()) return;
+    const sp = this._spatial(pos, 7, 60);
+    if (!sp) return;
+    const ctx = this.ctx, t = ctx.currentTime + sp.delay;
+    const dur = heavy ? 0.46 : 0.34;
+    const out = this._chain(sp, dur + 0.1);
+    out.gain.value = sp.gain * (heavy ? 0.95 : 0.72);
+
+    // The tear: noise sweeping down through a resonant band.
+    const n = this._noiseSource(true);
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.Q.value = 1.6;
+    f.frequency.setValueAtTime(rand(1100, 1600), t);
+    f.frequency.exponentialRampToValueAtTime(180, t + dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(1, t + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    n.connect(f); f.connect(g); g.connect(out);
+    n.start(t); n.stop(t + dur);
+
+    // The snap: a short, hard click a moment in.
+    const snap = this._noiseSource(false);
+    const sf = ctx.createBiquadFilter();
+    sf.type = 'highpass';
+    sf.frequency.value = 1800;
+    const sg2 = ctx.createGain();
+    const st = t + 0.02;
+    sg2.gain.setValueAtTime(0.9, st);
+    sg2.gain.exponentialRampToValueAtTime(0.0001, st + 0.05);
+    snap.connect(sf); sf.connect(sg2); sg2.connect(out);
+    snap.start(st); snap.stop(st + 0.06);
+
+    // The thud: what you feel rather than hear.
+    const o = ctx.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(heavy ? 96 : 130, t);
+    o.frequency.exponentialRampToValueAtTime(38, t + 0.22);
+    const og = ctx.createGain();
+    og.gain.setValueAtTime(heavy ? 1.0 : 0.7, t);
+    og.gain.exponentialRampToValueAtTime(0.0001, t + 0.26);
+    o.connect(og); og.connect(out);
+    o.start(t); o.stop(t + 0.27);
+  }
+
   /** Bullet striking stone / metal — the ricochet whine sells the miss. */
   ricochet(pos, metal = false) {
     if (!this._canPlay()) return;

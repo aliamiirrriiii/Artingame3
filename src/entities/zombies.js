@@ -561,19 +561,24 @@ export class ZombieManager {
     z.fallAngle = 0;
     z.vel.set(dir.x * 1.6, 0, dir.z * 1.6);
 
-    // A death is loud and messy — this is the payoff for the whole loop.
+    // A death is loud and messy — this is the payoff for the whole loop, so
+    // it is deliberately the largest single effect in the game.
     const p = this._tmp2.set(z.pos.x, z.pos.y + z.height * 0.55, z.pos.z);
-    this.fx.bloodBurst(p, dir, 2.0 * z.spec.gore, true);
-    this.fx.bloodPool(z.pos.x, z.pos.z, rand(0.9, 1.6) * z.scale);
-    for (let i = 0; i < Math.round(4 * z.spec.gore); i++) {
+    this.fx.bloodBurst(p, dir, 2.7 * z.spec.gore, true);
+    this.fx.bloodPool(z.pos.x, z.pos.z, rand(1.1, 1.9) * z.scale);
+    for (let i = 0; i < Math.round(7 * z.spec.gore); i++) {
       this.fx.gibs.spawn(
         p.x, p.y, p.z,
-        dir.x * rand(1, 4) + gauss() * 2.4,
-        rand(2.5, 6.5),
-        dir.z * rand(1, 4) + gauss() * 2.4,
-        rand(0.7, 1.5) * z.scale, rand(5, 9),
+        dir.x * rand(1, 5) + gauss() * 2.8,
+        rand(2.5, 7.5),
+        dir.z * rand(1, 5) + gauss() * 2.8,
+        rand(0.7, 1.6) * z.scale, rand(5, 9),
       );
     }
+    // And a second pool where the body is going to end up, not only where it
+    // was standing when it died.
+    this.fx.bloodPool(z.pos.x + dir.x * 0.7, z.pos.z + dir.z * 0.7, rand(0.5, 1.0) * z.scale);
+    if (byPlayer) this._backSplatter(p, dir, 2.0);
 
     // The killing blow takes the part it landed on with it. Whether a head
     // actually comes off is the difference between a kill that registers and

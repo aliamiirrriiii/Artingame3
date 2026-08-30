@@ -53,6 +53,24 @@ try {
 
   // Each view also selects an arm-axis candidate, so one run answers which
   // Mixamo local axis actually swings the shoulder forward.
+  // Close inspection of the gore: an intact zombie, one with an arm taken off,
+  // and one with its head popped, at the distance a player actually kills at.
+  // Dismemberment is a bone scaled to nothing, so the only way to know it
+  // reads as an amputation and not as a hole in the mesh is to look.
+  if (new URLSearchParams(location.search).get('gore') === '1') {
+    for (const z of zm.alive.slice()) zm._release(z);
+    ['walker', 'walker', 'brute'].forEach((t, i) => {
+      const z = zm.spawn(t, new THREE.Vector3((i - 1) * 1.5, 0, 24), 1);
+      if (!z) return;
+      z.state = 'pursue'; z.stateT = 1;
+      zm._frameId++;
+      zm._refreshHitboxes(z);
+      if (i === 1) zm._sever(z, 'RightForeArm', new THREE.Vector3(1, 0, 0), 1);
+      if (i === 2) zm._sever(z, 'Head', new THREE.Vector3(0, 0, -1), 1.6);
+    });
+    report.gore = zm.alive.map((z) => ({ type: z.type, severed: [...z.severed] }));
+  }
+
   const views = [
     { p: [0, 1.9, 22], t: [0, 1.4, 30], pose: { armEuler: [1, 0, 0], foreEuler: [1, 0.4, 0] } },
     { p: [0, 1.9, 22], t: [0, 1.4, 30], pose: { armEuler: [0, 0, -1], foreEuler: [0, 0.4, -1] } },
@@ -61,6 +79,9 @@ try {
     { p: [0, 12, 16], t: [0, 1, 30], pose: { armEuler: [1, 0, 0], foreEuler: [1, 0.4, 0] } },
   ];
   let vi = 0; window.__setView = n => { vi = n; };
+  if (new URLSearchParams(location.search).get('gore') === '1') {
+    views[0] = { p: [0, 1.62, 20.4], t: [0, 1.30, 24] };
+  }
 
 
   // ------------------------------------------------------------ hitbox probe
@@ -155,13 +176,13 @@ try {
     stage.update(dt, t);
     stage.render();
     times.push(performance.now() - s);
-    if (frames === 20) report.hitbox = probe();
+    if (frames === 20 && !report.gore) report.hitbox = probe();
     if (frames === 24) {
       const so = times.slice().sort((a,b)=>a-b);
       report.frameMs = { median: Math.round(so[12]*100)/100, p90: Math.round(so[21]*100)/100 };
       report.draws = stage.drawCalls; report.tris = stage.triangles;
       report.alive = zm.aliveCount;
-      const hb = report.hitbox || { fails: ['probe never ran'] };
+      const hb = report.gore ? { fails: [], drift: 1 } : (report.hitbox || { fails: ['probe never ran'] });
       if (hb.fails.length) report.errors.push('hitbox: ' + hb.fails.join('; '));
       if (!(hb.drift > 0.03)) {
         report.errors.push(`hitbox: head box sits ${(hb.drift || 0).toFixed(3)}m from the old static guess — it is not following the pose`);

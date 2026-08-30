@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { clamp, lerp, fmt } from '../core/util.js';
+import { clamp, lerp, fmt, rand } from '../core/util.js';
 import { PERKS } from '../game/economy.js';
 
 /**
@@ -56,6 +56,7 @@ export class HUD {
       compassMarks: $('compass-marks'),
       magPips: $('mag-pips'),
       killfeed: $('killfeed'),
+      gore: $('gore'),
     };
 
     this.cache = {};
@@ -288,15 +289,56 @@ export class HUD {
   // -------------------------------------------------------------- kill feed
 
   /** One line per kill, newest at the bottom. Purely feedback — no state. */
-  killFeed(name, crit = false) {
+  killFeed(name, crit = false, tag = '') {
     const row = document.createElement('div');
     row.className = crit ? 'kf crit' : 'kf';
     const b = document.createElement('b');
     b.textContent = name;
     row.appendChild(b);
+    if (tag) {
+      const i = document.createElement('i');
+      i.textContent = tag;
+      row.appendChild(i);
+    }
     this.el.killfeed.appendChild(row);
     while (this.el.killfeed.children.length > 5) this.el.killfeed.firstChild.remove();
     setTimeout(() => row.remove(), 3200);
+  }
+
+  // -------------------------------------------------------------- lens gore
+
+  /**
+   * Blood on the lens. `power` is 0..1 — one small fleck for a kill across the
+   * street, a faceful for one at arm's length.
+   *
+   * Deliberately not a red wash over the whole screen: that is what taking
+   * damage looks like, and the two must never be confusable. These are
+   * discrete blobs, weighted toward the edges so the middle of the screen —
+   * where the player is actually aiming — stays readable.
+   */
+  gore(power = 1) {
+    const layer = this.el.gore;
+    if (!layer || power <= 0.02) return;
+    const n = Math.round(clamp(1 + power * 5, 1, 7));
+    for (let i = 0; i < n; i++) {
+      const el = document.createElement('div');
+      const fine = Math.random() < 0.45;
+      el.className = fine ? 'splat fine' : 'splat';
+      const size = (fine ? rand(14, 44) : rand(40, 150)) * (0.55 + power * 0.75);
+      // Push the blob off centre: |x| biased outward, so the crosshair stays clear.
+      const ex = (Math.random() < 0.5 ? -1 : 1) * (0.18 + Math.random() * 0.34);
+      const ey = (Math.random() < 0.5 ? -1 : 1) * (0.10 + Math.random() * 0.38);
+      el.style.width = `${size}px`;
+      el.style.height = `${size * rand(0.62, 1.35)}px`;
+      el.style.left = `${(0.5 + ex) * 100}%`;
+      el.style.top = `${(0.5 + ey) * 100}%`;
+      el.style.setProperty('--r', `${Math.round(rand(0, 360))}deg`);
+      el.style.animationDelay = `${Math.round(rand(0, 70))}ms`;
+      layer.appendChild(el);
+      setTimeout(() => el.remove(), 3000);
+    }
+    // A cap, so a shotgun into a crowd cannot paper the screen.
+    while (layer.children.length > 26) layer.firstChild.remove();
   }
 
   // ------------------------------------------------------------- crosshair

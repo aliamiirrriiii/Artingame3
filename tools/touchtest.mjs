@@ -244,6 +244,47 @@ try {
     movedBoth > 0.5 && Math.abs(p1.yaw - p0.yaw) > 0.05,
     `moved ${movedBoth.toFixed(2)} m, yaw d=${Math.abs(p1.yaw - p0.yaw).toFixed(3)}`);
 
+  // A kill is supposed to hold the frame, jolt the camera and throw blood at
+  // the lens. None of that is reachable by playing the game headlessly — the
+  // scripted inputs rarely finish anything — so one is staged: a zombie moved
+  // to arm's length and shot through the head.
+  console.log('\nkill feedback');
+  const beforeKill = await report();
+  const gore = await page.evaluate(() => {
+    const g = window.__game;
+    const z = g.zombies.alive[0];
+    if (!z) return { staged: false };
+    z.pos.set(g.player.pos.x, 0, g.player.pos.z + 1.4);
+    z.distToPlayer = 1.4;
+    z.health = 1;
+    z.state = 'pursue';
+    const before = document.getElementById('gore') ? document.getElementById('gore').childElementCount : 0;
+    g.hitStop = 0;
+    g.stage._shakeTrauma = 0;
+    g.zombies.damage(z, 400, z.pos, { x: 0, y: 0, z: 1 },
+      { crit: true, part: 'head', byPlayer: true });
+    return {
+      staged: true,
+      hitStop: +(g.hitStop || 0).toFixed(3),
+      splats: (document.getElementById('gore')
+        ? document.getElementById('gore').childElementCount : 0) - before,
+      shake: +g.stage._shakeTrauma.toFixed(3),
+      severed: [...(z.severed || [])],
+      feed: document.getElementById('killfeed').textContent,
+    };
+  });
+  check('a kill holds the frame', gore.hitStop > 0, `hitStop ${gore.hitStop}s`);
+  check('a kill jolts the camera', gore.shake > 0, `trauma ${gore.shake}`);
+  check('a kill at arm\'s length throws blood at the lens', gore.splats > 0,
+    `${gore.splats} splats`);
+  check('a headshot kill takes the head off', gore.severed.includes('Head'),
+    `severed ${JSON.stringify(gore.severed)}`);
+  check('the kill feed says how it died', /HEADSHOT/i.test(gore.feed), gore.feed.trim());
+  await sleep(700);
+  const afterKill = await report();
+  console.log(`       (frame time ${beforeKill.frameMs} ms before the kill, `
+    + `${afterKill.frameMs} ms after)`);
+
   console.log('\npause');
   const pause = await rect('[data-touch="pause"]');
   await page.touchscreen.tap(pause.x + pause.width / 2, pause.y + pause.height / 2);

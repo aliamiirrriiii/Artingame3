@@ -241,9 +241,13 @@ class DecalField {
     const mat = new THREE.MeshBasicMaterial({
       map: texture,
       transparent: true,
+      // Multiply, so a decal darkens whatever it lands on rather than pasting
+      // a flat colour over it — and so the fade in `update` can work by
+      // lerping the instance colour toward white, which an InstancedMesh can
+      // do and a per-instance alpha cannot.
       blending: THREE.MultiplyBlending,
-      // three requires premultiplied alpha for multiply blending; without it
-      // the decal draws as an opaque black quad.
+      // Not optional: three refuses to set up multiply blending without it,
+      // and silently leaves the material blending-free — an opaque quad.
       premultipliedAlpha: true,
       depthWrite: false,
       polygonOffset: true,
@@ -253,6 +257,7 @@ class DecalField {
       fog: true,
       toneMapped: false,
     });
+
     this.mesh = new THREE.InstancedMesh(geo, mat, capacity);
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.mesh.frustumCulled = false;
@@ -342,7 +347,9 @@ class DecalField {
 /** Chunks of zombie. Ballistic, they bounce once or twice, then sink and vanish. */
 class GibField {
   constructor(scene, capacity, material) {
-    const geo = new THREE.IcosahedronGeometry(0.075, 0);
+    // 10 cm across. Bigger than this and the chunks read as flying rocks
+    // rather than meat, especially when one passes close to the camera.
+    const geo = new THREE.IcosahedronGeometry(0.052, 0);
     // Squash into irregular shards so they do not read as identical pebbles.
     const pos = geo.attributes.position;
     for (let i = 0; i < pos.count; i++) {
@@ -554,7 +561,7 @@ export class Effects {
     this.gibs.onLand = (x, y, z) => {
       if (Math.random() < 0.5) {
         this.bloodDecals.place(
-          { x, y: 0.02, z }, UP, rand(0.5, 1.1), 0x6a1a18, 26,
+          { x, y: 0.02, z }, UP, rand(0.5, 1.1), 0xc4665a, 26,
         );
       }
     };
@@ -647,32 +654,35 @@ export class Effects {
    * the chest are visibly different events.
    */
   bloodBurst(point, dir, power = 1, crit = false) {
-    const n = Math.round(clamp(6 + power * 9, 4, 26));
+    // Many small droplets rather than a few large ones. Blood at half a metre
+    // across reads as a red balloon; the spray only looks like liquid when the
+    // individual pieces are small enough that the eye reads the cloud instead.
+    const n = Math.round(clamp(14 + power * 20, 10, 54));
     for (let i = 0; i < n; i++) {
       this.blood.emit({
         x: point.x + gauss() * 0.05, y: point.y + gauss() * 0.05, z: point.z + gauss() * 0.05,
-        vx: dir.x * rand(1, 6) * power + gauss() * 1.8,
-        vy: dir.y * rand(1, 5) * power + gauss() * 1.8 + 1.2,
-        vz: dir.z * rand(1, 6) * power + gauss() * 1.8,
-        life: rand(0.5, 1.3), size: rand(0.07, 0.20) * (crit ? 1.5 : 1),
-        drag: 0.9, gravity: 1.5, bounce: false, fadeIn: 0.04,
-        r0: 0.62, g0: 0.045, b0: 0.035, r1: 0.16, g1: 0.01, b1: 0.01,
+        vx: dir.x * rand(1, 6) * power + gauss() * 1.9,
+        vy: dir.y * rand(1, 5) * power + gauss() * 1.9 + 1.2,
+        vz: dir.z * rand(1, 6) * power + gauss() * 1.9,
+        life: rand(0.5, 1.3), size: rand(0.030, 0.085) * (crit ? 1.4 : 1),
+        drag: 0.9, gravity: 2.4, bounce: false, fadeIn: 0.03,
+        r0: 0.50, g0: 0.030, b0: 0.026, r1: 0.13, g1: 0.008, b1: 0.008,
       });
     }
     // Fine mist that hangs for a moment — reads as spray rather than droplets.
-    for (let i = 0; i < Math.round(n * 0.5); i++) {
+    for (let i = 0; i < Math.round(n * 0.45); i++) {
       this.blood.emit({
         x: point.x, y: point.y, z: point.z,
-        vx: dir.x * rand(0.5, 3) + gauss() * 1.2,
-        vy: dir.y * rand(0.5, 3) + gauss() * 1.2 + 0.5,
-        vz: dir.z * rand(0.5, 3) + gauss() * 1.2,
-        life: rand(0.35, 0.8), size: rand(0.18, 0.45), drag: 3.2, gravity: 0.25,
-        grow: 1.8, fadeIn: 0.1,
-        r0: 0.38, g0: 0.05, b0: 0.04, r1: 0.10, g1: 0.02, b1: 0.02,
+        vx: dir.x * rand(0.5, 3) + gauss() * 1.3,
+        vy: dir.y * rand(0.5, 3) + gauss() * 1.3 + 0.5,
+        vz: dir.z * rand(0.5, 3) + gauss() * 1.3,
+        life: rand(0.22, 0.55), size: rand(0.055, 0.135), drag: 3.6, gravity: 0.5,
+        grow: 1.5, fadeIn: 0.08,
+        r0: 0.30, g0: 0.035, b0: 0.030, r1: 0.07, g1: 0.012, b1: 0.012,
       });
     }
     if (crit || power > 1.4) {
-      const g = crit ? 5 : 3;
+      const g = crit ? 7 : 4;
       for (let i = 0; i < g; i++) {
         this.gibs.spawn(
           point.x, point.y, point.z,
@@ -685,14 +695,24 @@ export class Effects {
     }
   }
 
-  /** Ground pool under a corpse. */
+  /**
+   * Ground pool under a corpse.
+   *
+   * These are multiply-blended, so the colour is what the surface underneath
+   * gets multiplied by, not what you see — and multiplication is unforgiving
+   * on dark ground, where anything much below white turns the decal into a
+   * hole in the pavement. The old values were mixed for a night level, where
+   * that did not show. In daylight they had to come up a long way: what looks
+   * like a washed-out pink here lands as blood once it has been multiplied
+   * through asphalt.
+   */
   bloodPool(x, z, size = 1.4) {
-    this.bloodDecals.place({ x, y: 0.02, z }, UP, size, 0x5a1412, 40);
+    this.bloodDecals.place({ x, y: 0.02, z }, UP, size, 0xb8503f, 40);
   }
 
   /** Wall splatter behind a zombie that just took a heavy hit. */
   bloodSplat(point, normal, size = 0.8) {
-    this.bloodDecals.place(point, normal, size, 0x6a1614, 30);
+    this.bloodDecals.place(point, normal, size, 0xc25a49, 30);
   }
 
   explosion(pos, radius = 4, color = 0xff8a30) {

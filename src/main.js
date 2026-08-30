@@ -29,6 +29,16 @@ import { HUD } from './ui/hud.js';
  * 30 and at 144 fps.
  */
 
+/**
+ * Hit stop, in seconds of real time and as a fraction of normal speed.
+ *
+ * The ceiling is what keeps this a punch rather than a stutter: a shotgun
+ * that kills six zombies in one trigger pull would otherwise bank a third of
+ * a second of slow motion and read as a frame-rate collapse.
+ */
+const HIT_STOP_SCALE = 0.10;
+const HIT_STOP_MAX = 0.13;
+
 const SETTINGS_KEY = 'notr.settings.v1';
 const BEST_KEY = 'notr.best.v1';
 
@@ -62,6 +72,8 @@ class Game {
     this.elapsed = 0;
     this.runTime = 0;
     this.frameCount = 0;
+    // Hit stop: seconds of near-frozen simulation still owed. See `_frame`.
+    this.hitStop = 0;
     this.frameAvg = new RollingAverage(60, 16.7);
     this.fpsAvg = new RollingAverage(30, 60);
 
@@ -307,12 +319,40 @@ class Game {
     return this.isTouch ? this.touchInput : this.input;
   }
 
+  /**
+   * What a kill feels like: a held frame, a jolt through the camera, and — if
+   * it happened close enough to reach you — blood on the lens.
+   *
+   * All three scale with how near it was, so clearing a distant alley stays
+   * quiet and something dying at arm's length is an event.
+   */
+  _killFelt(z, info) {
+    const near = clamp(1 - z.distToPlayer / 12, 0, 1);
+    const popped = !!info.popped;
+
+    this.hitStop = Math.min(HIT_STOP_MAX,
+      this.hitStop + (popped ? 0.075 : info.crit ? 0.055 : 0.038));
+
+    this.stage.addShake((popped ? 0.16 : 0.09) + near * (popped ? 0.26 : 0.16));
+
+    // Only a kill inside about four metres throws anything as far as the
+    // camera; past that it is a fleck at most.
+    const spray = clamp(1 - z.distToPlayer / 4.5, 0, 1);
+    if (spray > 0.02) this.hud.gore(spray * (popped ? 1 : 0.8) * z.spec.gore);
+
+    if (popped) audio.gore(z.pos, true);
+  }
+
   _wire() {
     this.combat.onPoints = (amount, kind) => {
       const gained = this.economy.award(amount, kind);
       this.hud.setPoints(this.economy.points, gained);
     };
-    this.combat.onHitMarker = (crit, kill) => this.hud.hitMarker(crit, kill);
+    this.combat.onHitMarker = (crit, kill) => {
+      this.hud.hitMarker(crit, kill);
+      // A headshot that does not kill still deserves a beat of its own.
+      if (crit && !kill) this.hitStop = Math.min(HIT_STOP_MAX, this.hitStop + 0.016);
+    };
     this.combat.onNotice = (t) => this.hud.notice(t, 'bad');
     this.combat.onDamage = (point, amount, crit) => {
       if (amount >= 1e8) return;   // insta-kill reads as a kill, not a number
@@ -324,14 +364,26 @@ class Game {
       this.hud.damageDirection(this.player.damageDir.x, this.player.damageDir.y);
       if (this.player.dead) this._onDeath();
     };
-    this.zombies.onKill = (z, byPlayer) => {
+    this.zombies.onKill = (z, byPlayer, info = {}) => {
       this.director.notifyKill(z);
       if (byPlayer) {
         const gained = this.economy.award(z.spec.points, 'kill');
         this.hud.setPoints(this.economy.points, gained);
-        this.hud.killFeed(z.spec.name, !!z.spec.boss);
+        this.hud.killFeed(z.spec.name,
+          !!z.spec.boss || info.popped,
+          info.popped ? 'Headshot' : info.part === 'head' ? 'Head' : '');
+        this._killFelt(z, info);
       }
       if (this.player.hasPerk('vampire')) this.player.heal(4);
+    };
+
+    // A limb coming off is its own event: it can happen without a kill, and
+    // when it does it should still land.
+    this.zombies.onDismember = (z, bone) => {
+      audio.gore(z.pos, bone === 'Head');
+      const near = clamp(1 - z.distToPlayer / 9, 0, 1);
+      this.stage.addShake(0.10 + near * 0.16);
+      this.hud.gore(near * 0.75);
     };
     this.zombies.onSpit = (origin, dir, spec) => {
       this.combat.spawnProjectile('spit', origin, dir, spec, spec.speed);
@@ -808,7 +860,21 @@ class Game {
     const frameStart = performance.now();
 
     // Clamp dt so an alt-tab or a GC pause cannot teleport the horde into you.
-    const dt = Math.min(this.clock.getDelta(), 0.1);
+    const real = Math.min(this.clock.getDelta(), 0.1);
+
+    // Hit stop. A kill drops the simulation to a crawl for a few dozen
+    // milliseconds while the frame rate carries on unchanged, so the moment
+    // of the hit gets held up for the player to see. It is the single
+    // cheapest thing that separates a kill that lands from a number going up.
+    //
+    // Rendering, input and the HUD are all outside this: only `update` gets
+    // the slowed step, and the budget is small enough (see HIT_STOP_MAX) that
+    // it can never read as lag.
+    let dt = real;
+    if (this.hitStop > 0) {
+      this.hitStop = Math.max(0, this.hitStop - real);
+      dt = real * HIT_STOP_SCALE;
+    }
     this.elapsed += dt;
     this.frameCount++;
 
@@ -1035,6 +1101,8 @@ class Game {
       loadingVisible: document.getElementById('loading').classList.contains('show'),
       shownScreens: [...document.querySelectorAll('.screen.show')].map((e) => e.id),
       runTime: Number(this.runTime.toFixed(1)),
+      hitStop: Number((this.hitStop ?? 0).toFixed(3)),
+      goreSplats: document.getElementById('gore')?.childElementCount ?? -1,
       done: true,
     };
   }

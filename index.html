@@ -253,6 +253,13 @@ body.touch #ui::after { height: 104px; }
 }
 .kf b { color: var(--bone); font-weight: 500; }
 .kf.crit b { color: var(--alert); }
+/* How it died, when how it died is worth saying. */
+.kf i {
+  font-style: normal; margin-left: 7px; padding: 1px 4px 0;
+  font-size: 9.5px; letter-spacing: .18em;
+  color: var(--tan); border: 1px solid rgba(198,160,96,.42);
+}
+.kf.crit i { color: var(--alert); border-color: rgba(184,58,44,.55); }
 .kf::before { content: '— '; color: var(--slate); }
 @keyframes kfIn {
   0% { opacity: 0; transform: translateX(8px); }
@@ -431,6 +438,32 @@ body.touch #ui::after { height: 104px; }
   position: absolute; inset: 0; opacity: 0;
   background: radial-gradient(ellipse at center, transparent 40%, rgba(112,12,8,.74) 100%);
   transition: opacity .18s;
+}
+
+/* ------------------------------------------------------------------ gore */
+/* Blood thrown onto the lens by a kill close enough to reach you. Irregular
+   blobs rather than a red wash: a wash reads as damage, and the player has to
+   be able to tell "I killed something" from "something is killing me". */
+#gore { position: absolute; inset: 0; overflow: hidden; }
+.splat {
+  position: absolute; opacity: 0; will-change: opacity, transform;
+  background: radial-gradient(closest-side,
+    rgba(104,7,6,.94), rgba(78,5,4,.78) 52%, rgba(58,4,4,.28) 82%, rgba(58,4,4,0) 100%);
+  border-radius: 46% 54% 38% 62% / 58% 42% 61% 39%;
+  animation: splat 2.7s cubic-bezier(.16,.9,.3,1) forwards;
+}
+.splat.fine {
+  /* A softer edge for the fine spray. Done with the gradient rather than a
+     CSS blur filter: blurring two dozen animated layers costs more frame time
+     than the entire particle system. */
+  background: radial-gradient(closest-side,
+    rgba(112,10,8,.72), rgba(84,6,5,.42) 45%, rgba(64,5,4,0) 100%);
+}
+@keyframes splat {
+  0%   { opacity: 0;   transform: scale(.55) rotate(var(--r)); }
+  7%   { opacity: 1;   transform: scale(1) rotate(var(--r)); }
+  55%  { opacity: .85; transform: scale(1.02) rotate(var(--r)); }
+  100% { opacity: 0;   transform: scale(1.07) rotate(var(--r)); }
 }
 
 /* -------------------------------------------------------- damage numbers */
@@ -803,6 +836,7 @@ body.touch #lowfps { top: 34px; }
 
   <div id="damage-ring"></div>
   <div id="vignette-hurt"></div>
+  <div id="gore"></div>
   <div id="dmg-layer"></div>
 
   <div id="compass"><div id="compass-marks"></div></div>
