@@ -13,7 +13,11 @@ on:
       - 'src/**'
       - 'vendor/**'
       - 'index.html'
-      - 'tools/assets.manifest.json'
+      # The whole of tools/, not just the asset manifest. This job's entire
+      # purpose is to run the harnesses in tools/, and it used to ignore changes
+      # to them — so a commit that only touched a test never ran that test, and
+      # a red suite could look fixed simply because nothing re-ran.
+      - 'tools/**'
       - '.github/workflows/android.yml'
   workflow_dispatch:
 
