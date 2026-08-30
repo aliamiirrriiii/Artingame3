@@ -3,7 +3,9 @@
 A wave-survival zombie shooter that runs in the browser on WebGL2 — physically
 based night rendering, a flow-field horde, and a twelve-weapon arsenal.
 
-![Wave three, holding the north street](docs/screenshot-wave.png)
+![Holding the plaza at Precinct 13](docs/screenshot-wave.png)
+
+![The main menu](docs/screenshot-menu.png)
 
 ```bash
 npm run assets     # download the asset pack from the web (once)
@@ -105,7 +107,7 @@ Freeze and Carnage.
 
 ### The arsenal
 
-![The Arc Projector](docs/screenshot-arc.png)
+![Every weapon the gunsmith builds](docs/screenshot-arsenal.png)
 
 Twelve weapons, each built to solve a problem the others do not.
 
