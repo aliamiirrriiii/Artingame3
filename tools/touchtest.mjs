@@ -122,24 +122,49 @@ try {
   console.log('\nmovement stick (left half)');
   const before = await report();
   // The stick floats: its base is planted where the thumb goes down, on the
-  // first frame that runs after the touchStart. Sending the touchMove in the
-  // same tick can plant the base under the already-moved thumb, which reads as
-  // a zero-length vector and walks the player nowhere. Give it a frame — CI ran
-  // this fast enough to lose the race where a developer machine does not.
+  // first frame that runs after the touchStart, so give it a frame before
+  // moving the thumb.
   await touch('touchStart', [{ x: 150, y: 280, id: 1 }]);
   await sleep(90);
   await touch('touchMove', [{ x: 150, y: 190, id: 1 }]);
-  await sleep(700);
-  // Re-assert the same position mid-hold: a held stick that stops emitting
-  // events must keep its deflection, and this is the check for that.
-  await touch('touchMove', [{ x: 150, y: 190, id: 1 }]);
-  await sleep(700);
+
+  // Sample through the hold rather than only at its ends. When this check
+  // fails the question is always the same — did the stick stop reading, or did
+  // the player walk into something — and two positions cannot tell those apart.
+  const trace = [];
+  const sample = () => page.evaluate(() => {
+    const g = window.__game;
+    const st = g.touchInput?.stick;
+    return {
+      x: +g.player.pos.x.toFixed(2), z: +g.player.pos.z.toFixed(2),
+      yaw: +g.player.yaw.toFixed(2),
+      v: +Math.hypot(g.player.vel.x, g.player.vel.z).toFixed(2),
+      sx: st ? +st.dx.toFixed(2) : null, sy: st ? +st.dy.toFixed(2) : null,
+      sprint: !!g.player.sprinting, zombies: g.zombies.aliveCount,
+    };
+  });
+  for (let i = 0; i < 8; i++) { await sleep(175); trace.push(await sample()); }
   const mid = await report();
   await touch('touchEnd', []);
+
   const moved = Math.hypot(mid.playerPosF[0] - before.playerPosF[0],
                            mid.playerPosF[1] - before.playerPosF[1]);
-  check('stick walks the player', moved > 1.0, `moved ${moved.toFixed(2)} m`);
-  console.log(`       walked ${moved.toFixed(2)} m in 1.4 s`);
+  // Two assertions, because they are two different claims. The stick's actual
+  // contract is the vector it produces, and that is deterministic: a 90 px drag
+  // against a 66 px radius is full forward deflection wherever this runs. How
+  // far the player then travels is a fact about the level in front of the spawn
+  // and about frame timing, so it is checked only loosely — enough to prove the
+  // vector is wired through to the player, not enough to fail because the arena
+  // has a barricade in it. The distance is printed every run either way, so a
+  // real drift in it is visible before it becomes a failure.
+  const deflect = trace.length ? -Math.min(...trace.map((t) => t.sy ?? 0)) : 0;
+  check('stick reads full forward deflection', deflect > 0.8, `dy=${(-deflect).toFixed(2)}`);
+  check('stick walks the player', moved > 0.3, `moved ${moved.toFixed(2)} m`);
+  console.log(`       walked ${moved.toFixed(2)} m in 1.4 s, peak deflection ${deflect.toFixed(2)}`);
+  for (const t of trace) {
+    console.log(`       x=${t.x} z=${t.z} yaw=${t.yaw} v=${t.v} `
+      + `stick=(${t.sx},${t.sy}) sprint=${t.sprint} zombies=${t.zombies}`);
+  }
 
   console.log('\nlook drag (right half)');
   const beforeYaw = (await report()).yaw;
