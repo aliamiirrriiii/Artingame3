@@ -35,6 +35,9 @@ export class PropLibrary {
    * @param {string} key           asset key of the loaded glTF
    * @param {object} opts
    *   include      node names to keep (default: the whole scene)
+   *   orient       [x,y,z] radians applied before measuring, for assets that
+   *                are not Y-up (the traffic cone is authored Z-up, so without
+   *                this it is normalised across its width and laid on its side)
    *   targetHeight metres the prop should stand, measured on Y
    *   merge        merge parts that share a material into one geometry
    *   material     (mat, name) => mat|null — return a replacement, or mutate
@@ -46,9 +49,15 @@ export class PropLibrary {
     const gltf = this.assets.model(key);
     if (!gltf) return null;
 
-    const { include = null, targetHeight = null, merge = true, material = null, markers = null } = opts;
+    const {
+      include = null, targetHeight = null, merge = true,
+      material = null, markers = null, orient = null,
+    } = opts;
 
     const src = gltf.scene.clone(true);
+    // Correct the model's up-axis before anything is measured, so
+    // `targetHeight` really is a height.
+    if (orient) src.rotation.set(orient[0] || 0, orient[1] || 0, orient[2] || 0);
     src.updateMatrixWorld(true);
 
     // Keep only the requested nodes.

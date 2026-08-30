@@ -432,6 +432,9 @@ export class Level {
   _buildCones() {
     const cone = this.props.prepare('trafficCone', {
       include: ['Cone Normal'],
+      // Authored Z-up: its 0.52 m dimension is the height, not the 0.42 m one.
+      // Without this every cone is normalised across its width and laid over.
+      orient: [-Math.PI / 2, 0, 0],
       targetHeight: 0.72,
       material: (mat) => {
         // Authored as a bright retroreflective cone for daylight product shots.
@@ -449,17 +452,27 @@ export class Level {
 
     const r = this.rng;
     const places = [];
+
     // Clustered at the barricades, where a road closure would actually be.
+    // The sandbags run along (cos(rot+90), sin(rot+90)), so the cones are
+    // offset along the perpendicular to stand *in front* of the line rather
+    // than inside it.
     for (const [bx, bz, rot] of BARRICADES) {
+      const alongX = Math.cos(rot + Math.PI / 2), alongZ = Math.sin(rot + Math.PI / 2);
+      const outX = Math.cos(rot), outZ = Math.sin(rot);
       const n = this.preset.mobile ? 2 : 3;
       for (let i = 0; i < n; i++) {
-        const t = (i - (n - 1) / 2) * 1.9;
+        const t = (i - (n - 1) / 2) * 1.7;
+        // Alternate sides so both approaches to the barricade are marked.
+        const side = (i % 2 === 0 ? 1 : -1) * r.range(1.5, 2.1);
+        const x = bx + alongX * t + outX * side + r.range(-0.2, 0.2);
+        const z = bz + alongZ * t + outZ * side + r.range(-0.2, 0.2);
+        if (this._occupied(x, z, 0.45)) continue;
         places.push({
-          x: bx + Math.cos(rot + Math.PI / 2) * t + r.range(-0.3, 0.3),
-          z: bz + Math.sin(rot + Math.PI / 2) * t + r.range(-0.3, 0.3),
+          x, z,
           rotY: r.range(0, TAU),
           // A few have been knocked over.
-          tiltX: r.next() < 0.25 ? r.range(0.9, 1.5) : r.range(-0.05, 0.05),
+          tiltX: r.next() < 0.25 ? r.range(1.2, 1.6) : r.range(-0.04, 0.04),
         });
       }
     }
@@ -471,7 +484,7 @@ export class Level {
       if (this._occupied(x, z, 1.0)) continue;
       places.push({
         x, z, rotY: r.range(0, TAU),
-        tiltX: r.next() < 0.4 ? r.range(0.9, 1.6) : 0,
+        tiltX: r.next() < 0.4 ? r.range(1.2, 1.6) : 0,
       });
     }
     // Small enough that its shadow is invisible, and shadow casting would

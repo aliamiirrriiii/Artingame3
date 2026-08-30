@@ -32,7 +32,7 @@ const MODELS = q.get('url')
       { name: 'Lantern',      url: '../assets/models/lantern.glb' },
       { name: 'BrokenWindow', url: '../assets/models/broken_window.glb' },
       { name: 'TrafficCone',  url: '../assets/models/trafficcone/TrafficCone.gltf',
-        keep: ['Cone Normal'] },
+        keep: ['Cone Normal'], orient: [-Math.PI / 2, 0, 0] },
       { name: 'Soldier',      url: '../assets/models/soldier.glb' },
     ];
 
@@ -69,13 +69,26 @@ try {
       const g = await loader.loadAsync(m.url);
       let root = g.scene;
       if (m.keep) {
+        // Same tolerant lookup as PropLibrary: three's loader sanitises node
+        // names, so "Cone Normal" in the file arrives as "Cone_Normal". Using
+        // getObjectByName directly silently falls back to the whole demo
+        // scene and reports the ground plane's triangles as the prop's.
+        const norm = (t) => String(t).toLowerCase().replace(/[\s_.:/[\]]/g, '');
         const picked = new THREE.Group();
         for (const name of m.keep) {
-          const n = root.getObjectByName(name);
+          let n = root.getObjectByName(name);
+          if (!n) {
+            const want = norm(name);
+            root.traverse((o) => { if (!n && o.name && norm(o.name) === want) n = o; });
+          }
           if (n) picked.add(n);
+          else report.errors.push(`${m.name}: node "${name}" not found`);
         }
         if (picked.children.length) root = picked;
       }
+      // Applied after any node picking: reparenting into a new group would
+      // otherwise drop a rotation set on the original root.
+      if (m.orient) { root.rotation.set(...m.orient); root.updateMatrixWorld(true); }
       // Normalise every model to the same on-screen height so they can be
       // compared, and record the true size for scaling them in the game.
       const box = new THREE.Box3().setFromObject(root);
