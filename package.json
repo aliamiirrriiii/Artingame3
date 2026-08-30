@@ -8,10 +8,14 @@
     "start": "node serve.mjs",
     "assets": "node tools/fetch-assets.mjs",
     "assets:force": "node tools/fetch-assets.mjs --force",
-    "smoke": "node tools/smoke.mjs"
+    "smoke": "node tools/smoke.mjs",
+    "test": "node tools/units.mjs"
   },
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "devDependencies": {
-    "playwright": "^1.48.0"
+    "playwright": "^1.48.0",
+    "three": "^0.180.0"
   }
 }

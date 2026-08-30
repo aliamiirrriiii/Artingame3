@@ -283,6 +283,18 @@ export class ZombieManager {
 
   get aliveCount() { return this.alive.length; }
 
+  /**
+   * Builds the pool up front during the loading screen. Cloning a rigged mesh
+   * costs a millisecond or two; doing it lazily meant a visible hitch the first
+   * time a wave stepped up its concurrent count.
+   */
+  prewarm(n = this.maxAlive) {
+    while (this.zombies.length < n) {
+      this.zombies.push(this._createZombie());
+    }
+    return this.zombies.length;
+  }
+
   _acquire() {
     for (let i = 0; i < this.zombies.length; i++) {
       if (!this.zombies[i].active) return this.zombies[i];
@@ -305,12 +317,20 @@ export class ZombieManager {
     z.type = typeId;
     z.spec = spec;
 
-    // Health scales geometrically but is softened after wave 12 so late waves
-    // stay a test of positioning rather than a pure damage wall.
+    // Health scaling.
+    //
+    // One shared linear-then-steeper curve rather than a per-archetype
+    // exponent: compounding a brute's higher scale made it 15x tougher than a
+    // walker by wave 20, which is a damage wall, not a difficulty curve. The
+    // archetypes differentiate through their base health instead.
+    //
+    // Bosses get their own gentler curve — a boss on the generic one hit
+    // 25,000 HP by wave 5, well past what the wave-5 arsenal can chew through.
     const w = Math.max(0, wave - 1);
-    const growth = w <= 11 ? Math.pow(spec.healthScale + 0.12, w * 0.55)
-                           : Math.pow(spec.healthScale + 0.12, 11 * 0.55) * (1 + (w - 11) * 0.16);
-    z.maxHealth = Math.round(spec.health * growth);
+    const growth = spec.boss
+      ? 1 + Math.max(0, wave - 5) * 0.25
+      : (w <= 9 ? 1 + w * 0.22 : 1 + 9 * 0.22 + (w - 9) * 0.30);
+    z.maxHealth = Math.round(spec.health * growth * (spec.healthScale ?? 1));
     z.health = z.maxHealth;
     z.damageTaken = 0;
 
@@ -538,6 +558,7 @@ export class ZombieManager {
 
   update(dt, player, elapsed) {
     this._time = elapsed;
+    this._player = player;
     this._buildGrid();
 
     const px = player.pos.x, pz = player.pos.z;
@@ -712,9 +733,14 @@ export class ZombieManager {
     const target = z.baseSpeed * z.boostMul * chargeMul * this.globalSpeedMul;
     z.speed = damp(z.speed, target, 4, dt);
 
+    // Ease off once inside striking distance so they crowd around the player
+    // rather than shoving through and out the other side.
+    const hold = reach * 0.8;
+    const approach = dist < hold ? 0 : Math.min(1, (dist - hold) / 1.2);
+
     const accel = 14;
-    z.vel.x = damp(z.vel.x, sx * z.speed, accel * dt * 6, dt * 6);
-    z.vel.z = damp(z.vel.z, sz * z.speed, accel * dt * 6, dt * 6);
+    z.vel.x = damp(z.vel.x, sx * z.speed * approach, accel * dt * 6, dt * 6);
+    z.vel.z = damp(z.vel.z, sz * z.speed * approach, accel * dt * 6, dt * 6);
 
     z.targetYaw = Math.atan2(sx, sz);
     z.state = 'pursue';
@@ -835,6 +861,25 @@ export class ZombieManager {
     this.level.collision.resolveCircle(
       z.pos, z.radius, z.pos.y + 0.45, z.pos.y + z.height, this._colScratch || (this._colScratch = []),
     );
+
+    // Bodies are solid against the player. The split is deliberately uneven:
+    // most of the overlap is resolved by moving the zombie, so a crowd slows
+    // you down and blocks a doorway without ever hard-locking you in place.
+    const p = this._player;
+    if (p && !p.dead) {
+      const dx = z.pos.x - p.pos.x, dz = z.pos.z - p.pos.z;
+      const min = z.radius + 0.40;
+      const d2 = dx * dx + dz * dz;
+      if (d2 < min * min && d2 > 1e-6) {
+        const d = Math.sqrt(d2);
+        const push = min - d;
+        const nx = dx / d, nz = dz / d;
+        z.pos.x += nx * push * 0.68;
+        z.pos.z += nz * push * 0.68;
+        p.pos.x -= nx * push * 0.32;
+        p.pos.z -= nz * push * 0.32;
+      }
+    }
 
     z.pos.x = clamp(z.pos.x, -48, 48);
     z.pos.z = clamp(z.pos.z, -48, 48);

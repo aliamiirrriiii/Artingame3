@@ -420,16 +420,24 @@ export class Level {
   /** Anchors for wall-buys, perk machines and the mystery box. */
   _buildStations() {
     const defs = [
-      { id: 'buy_shotgun',  kind: 'wallbuy', x: -21.5, z: -12, rot: 0,             weapon: 'shotgun',  cost: 1200 },
-      { id: 'buy_smg',      kind: 'wallbuy', x: 21.5,  z: 12,  rot: Math.PI,       weapon: 'smg',      cost: 1000 },
-      { id: 'buy_rifle',    kind: 'wallbuy', x: 12,    z: -21.5, rot: Math.PI / 2, weapon: 'rifle',    cost: 1600 },
-      { id: 'buy_revolver', kind: 'wallbuy', x: -12,   z: 21.5, rot: -Math.PI / 2, weapon: 'revolver', cost: 900 },
-      { id: 'buy_ammo',     kind: 'ammo',    x: 0,     z: -12,  rot: 0,            cost: 750 },
+      // Wall-buys are mounted on the plaza-facing wall of each corner block's
+      // front building — one per quadrant, so whichever way you run there is
+      // something to spend points on.
+      { id: 'buy_shotgun',  kind: 'wallbuy', x: -26, z: -19.3, rot: 0,       weapon: 'shotgun',  cost: 1200 },
+      { id: 'buy_rifle',    kind: 'wallbuy', x: 26,  z: -19.3, rot: 0,       weapon: 'rifle',    cost: 1600 },
+      { id: 'buy_smg',      kind: 'wallbuy', x: 26,  z: 19.3,  rot: Math.PI, weapon: 'smg',      cost: 1000 },
+      { id: 'buy_revolver', kind: 'wallbuy', x: -26, z: 19.3,  rot: Math.PI, weapon: 'revolver', cost: 900 },
+
+      // Ammo crate sits in the plaza itself: always reachable, always the
+      // fallback when the horde has pushed you off everything else.
+      { id: 'buy_ammo',     kind: 'ammo',    x: 0,   z: -10.5, rot: 0,       cost: 750 },
 
       { id: 'perk_jugg',    kind: 'perk', perk: 'juggernaut', x: -30, z: 6,  rot: 0,           cost: 2500 },
       { id: 'perk_speed',   kind: 'perk', perk: 'sprinter',   x: 30,  z: -6, rot: Math.PI,     cost: 2000 },
       { id: 'perk_rapid',   kind: 'perk', perk: 'doubletap',  x: 6,   z: 30, rot: -Math.PI / 2, cost: 3000 },
       { id: 'perk_hands',   kind: 'perk', perk: 'quickhands', x: -6,  z: -30, rot: Math.PI / 2, cost: 2200 },
+
+      { id: 'pack', kind: 'pack', x: -36, z: 36, rot: -Math.PI / 4, cost: 5000, minWave: 8 },
 
       { id: 'box_a', kind: 'box', x: -36, z: -36, rot: Math.PI / 4, cost: 950 },
       { id: 'box_b', kind: 'box', x: 36,  z: 36,  rot: -Math.PI * 0.75, cost: 950 },
@@ -446,15 +454,43 @@ export class Level {
           pos: new THREE.Vector3(d.x, 1.6, d.z), color: PERK_LIGHT[d.perk] || 0x40e0ff,
           intensity: 16, range: 9, flicker: 0.08, kind: 'perk',
         });
+      } else if (d.kind === 'pack') {
+        // A jury-rigged machine: cabinet, glowing intake, and a lot of cabling.
+        this.box('paintedMetal', d.x, 0, d.z, 1.8, 2.3, 1.2, { rotY: d.rot, tag: 'prop' });
+        this.box('rust', d.x, 2.3, d.z, 2.0, 0.25, 1.4, { rotY: d.rot, collide: false });
+        this.box('neonRed', d.x + Math.cos(d.rot) * 0.65, 1.35, d.z + Math.sin(d.rot) * 0.65,
+          1.0, 0.7, 0.06, { rotY: d.rot, collide: false });
+        this.cylinder('steel', d.x - Math.cos(d.rot) * 0.9, 0, d.z - Math.sin(d.rot) * 0.9,
+          0.22, 0.26, 1.9, { seg: 10 });
+        this.fixtures.push({
+          pos: new THREE.Vector3(d.x, 1.9, d.z), color: 0xff5522,
+          intensity: 22, range: 11, flicker: 0.35, kind: 'perk',
+        });
+        this.decorTargets.push({ pos: new THREE.Vector3(d.x, 2.4, d.z), kind: 'fire', scale: 0.5 });
       } else if (d.kind === 'box') {
         this.box('wood', d.x, 0, d.z, 1.7, 1.0, 1.1, { rotY: d.rot, tag: 'prop' });
         this.box('rust', d.x, 1.0, d.z, 1.75, 0.12, 1.15, { rotY: d.rot, collide: false });
-      } else {
-        // Wall-buys are chalk outlines + a mounted weapon silhouette.
-        this.box('neonGreen', d.x, 1.35, d.z, 1.3, 0.5, 0.05, { rotY: d.rot, collide: false });
+      } else if (d.kind === 'ammo') {
+        // A crate of loose ammunition, open, with a lamp clamped to the lid.
+        this.box('wood', d.x, 0, d.z, 1.5, 0.85, 1.0, { rotY: d.rot, tag: 'prop' });
+        this.box('rust', d.x, 0.85, d.z, 1.6, 0.1, 1.1, { rotY: d.rot, collide: false });
+        this.box('brass', d.x, 0.95, d.z, 1.1, 0.14, 0.7, { rotY: d.rot, collide: false });
+        this.box('neonGreen', d.x, 1.15, d.z, 0.5, 0.16, 0.05, { rotY: d.rot, collide: false });
         this.fixtures.push({
-          pos: new THREE.Vector3(d.x, 1.5, d.z), color: 0x60ff90,
-          intensity: 10, range: 7, flicker: 0.05, kind: 'buy',
+          pos: new THREE.Vector3(d.x, 1.3, d.z), color: 0x60ff90,
+          intensity: 12, range: 8, flicker: 0.05, kind: 'buy',
+        });
+      } else {
+        // Wall-buys: a chalk outline on the brick with the weapon racked on it.
+        this.box('plank', d.x, 1.05, d.z, 1.5, 0.06, 0.10, { rotY: d.rot, collide: false });
+        this.box('gunmetal', d.x, 1.18, d.z, 1.15, 0.10, 0.12, { rotY: d.rot, collide: false });
+        this.box('gunPolymer', d.x, 1.30, d.z, 0.55, 0.22, 0.10, { rotY: d.rot, collide: false });
+        this.box('neonGreen', d.x, 1.62, d.z, 1.3, 0.42, 0.05, { rotY: d.rot, collide: false });
+        this.fixtures.push({
+          pos: new THREE.Vector3(
+            d.x + Math.sin(d.rot) * 0.6, 1.8, d.z + Math.cos(d.rot) * 0.6,
+          ),
+          color: 0x60ff90, intensity: 12, range: 8, flicker: 0.05, kind: 'buy',
         });
       }
 

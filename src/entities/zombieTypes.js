@@ -10,7 +10,7 @@ export const ARCHETYPES = {
     id: 'walker', name: 'Walker',
     health: 130, healthScale: 1.0,
     speed: [1.25, 1.75], sprintSpeed: 0,
-    damage: 22, attackRange: 1.55, attackWindup: 0.42, attackCooldown: 1.15,
+    damage: 19, attackRange: 1.55, attackWindup: 0.42, attackCooldown: 1.15,
     scale: [0.94, 1.06], heightM: 1.82,
     mass: 1.0, staggerResist: 0.0, points: 60,
     tint: [0x59634a, 0x646a52, 0x4e5a44],
@@ -20,7 +20,7 @@ export const ARCHETYPES = {
 
   runner: {
     id: 'runner', name: 'Runner',
-    health: 95, healthScale: 0.85,
+    health: 95, healthScale: 1.0,
     speed: [3.5, 4.35], sprintSpeed: 0,
     damage: 17, attackRange: 1.5, attackWindup: 0.26, attackCooldown: 0.8,
     scale: [0.92, 1.0], heightM: 1.78,
@@ -32,7 +32,7 @@ export const ARCHETYPES = {
 
   crawler: {
     id: 'crawler', name: 'Crawler',
-    health: 70, healthScale: 0.8,
+    health: 70, healthScale: 1.0,
     speed: [2.4, 3.1], sprintSpeed: 0,
     damage: 14, attackRange: 1.35, attackWindup: 0.3, attackCooldown: 0.75,
     scale: [0.62, 0.72], heightM: 1.15,
@@ -45,9 +45,9 @@ export const ARCHETYPES = {
 
   brute: {
     id: 'brute', name: 'Brute',
-    health: 900, healthScale: 1.25,
+    health: 820, healthScale: 1.0,
     speed: [1.5, 1.9], sprintSpeed: 4.6,
-    damage: 55, attackRange: 2.3, attackWindup: 0.62, attackCooldown: 1.7,
+    damage: 42, attackRange: 2.3, attackWindup: 0.62, attackCooldown: 1.8,
     scale: [1.32, 1.46], heightM: 2.5,
     mass: 4.0, staggerResist: 0.85, points: 320,
     tint: [0x66493a, 0x5c4535],
@@ -58,7 +58,7 @@ export const ARCHETYPES = {
 
   spitter: {
     id: 'spitter', name: 'Spitter',
-    health: 160, healthScale: 1.0,
+    health: 175, healthScale: 1.0,
     speed: [1.1, 1.5], sprintSpeed: 0,
     damage: 16, attackRange: 1.5, attackWindup: 0.4, attackCooldown: 1.2,
     scale: [0.95, 1.05], heightM: 1.8,
@@ -71,7 +71,7 @@ export const ARCHETYPES = {
 
   screamer: {
     id: 'screamer', name: 'Screamer',
-    health: 120, healthScale: 0.95,
+    health: 135, healthScale: 1.0,
     speed: [1.9, 2.4], sprintSpeed: 0,
     damage: 12, attackRange: 1.5, attackWindup: 0.35, attackCooldown: 1.0,
     scale: [0.9, 1.0], heightM: 1.76,
@@ -84,9 +84,9 @@ export const ARCHETYPES = {
 
   abomination: {
     id: 'abomination', name: 'ABOMINATION',
-    health: 6500, healthScale: 1.7,
+    health: 5200, healthScale: 1.0,
     speed: [1.9, 2.2], sprintSpeed: 6.0,
-    damage: 78, attackRange: 3.1, attackWindup: 0.7, attackCooldown: 1.9,
+    damage: 45, attackRange: 3.1, attackWindup: 0.7, attackCooldown: 2.1,
     scale: [2.05, 2.2], heightM: 3.8,
     mass: 14, staggerResist: 1.0, points: 2500,
     tint: [0x743c2e],

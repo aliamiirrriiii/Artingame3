@@ -52,8 +52,16 @@ export class Viewmodel {
     this.charge = 0;
     this.pullback = 0;
 
-    this._basePos = new THREE.Vector3(0.155, -0.135, -0.30);
+    this._basePos = new THREE.Vector3(0.148, -0.132, -0.32);
     this._adsPos = new THREE.Vector3(0, -0.058, -0.22);
+    // Held weapons are canted a few degrees inward and down so the barrel
+    // converges on the crosshair instead of pointing off to the right.
+    this._baseYaw = 0.055;
+    this._basePitch = 0.022;
+    this._baseRoll = -0.018;
+    // Slightly under scale: at the world camera's 75-degree FOV an unscaled
+    // half-metre rifle eats a quarter of the screen at the edge.
+    this.rig.scale.setScalar(0.88);
     this._muzzleWorld = new THREE.Vector3();
     this._fwd = new THREE.Vector3();
     this._rayOut = {};
@@ -370,11 +378,15 @@ export class Viewmodel {
              + this.pullback * 0.20 + this._sprint * 0.05;
 
     this.rig.position.set(px, py, pz);
+    // Convergence fades out as the sights come up — down the irons the weapon
+    // has to be dead straight.
+    const cant = 1 - adsAmount;
     this.rig.rotation.set(
-      this.kickPitch * 0.5 - this.swayY * 3.0 + this.pullback * 0.35,
-      -this.swayX * 3.0 + this._sprint * 0.5,
-      reloadRoll + this._sprint * 0.45 - this.swayX * 1.5,
+      this._basePitch * cant + this.kickPitch * 0.5 - this.swayY * 3.0 + this.pullback * 0.35,
+      this._baseYaw * cant - this.swayX * 3.0 + this._sprint * 0.5,
+      this._baseRoll * cant + reloadRoll + this._sprint * 0.45 - this.swayX * 1.5,
     );
+    this.rig.scale.setScalar(lerp(0.88, 1.0, adsAmount));
 
     // Minigun barrels keep spinning while the trigger is held.
     if (this.spinRate > 0.001 && this.current) {

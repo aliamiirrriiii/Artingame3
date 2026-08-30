@@ -19,11 +19,21 @@ const PARTICLE_VERT = /* glsl */`
   varying vec4 vColor;
   varying float vFog;
   uniform float uPixelScale;
+  uniform float uMaxSize;
   void main() {
-    vColor = aColor;
     vec4 mv = modelViewMatrix * vec4( position, 1.0 );
     float d = -mv.z;
-    gl_PointSize = max( 1.0, aSize * uPixelScale / max( d, 0.1 ) );
+
+    // Hard cap on sprite size. A two-metre smoke puff a metre from the eye
+    // projects to thousands of pixels and whites out the entire frame, which
+    // is exactly what a grenade at your feet used to do.
+    gl_PointSize = clamp( aSize * uPixelScale / max( d, 0.1 ), 1.0, uMaxSize );
+
+    // Fade anything the camera is practically inside, so you never end up
+    // looking at the flat side of a single sprite.
+    vColor = aColor;
+    vColor.a *= smoothstep( 0.12, 0.85, d );
+
     vFog = d;
     gl_Position = projectionMatrix * mv;
   }
@@ -92,6 +102,7 @@ class ParticleField {
       uniforms: {
         uMap: { value: texture },
         uPixelScale: { value: 600 },
+        uMaxSize: { value: 190 },
         uFogColor: { value: new THREE.Color(0x111823) },
         uFogDensity: { value: 0.026 },
       },
@@ -115,7 +126,12 @@ class ParticleField {
     this.material.uniforms.uFogDensity.value = density;
   }
 
-  setViewportHeight(h) { this.material.uniforms.uPixelScale.value = h * 0.85; }
+  setViewportHeight(h) {
+    // Matches the perspective projection for a ~75 degree vertical FOV, so
+    // `size` in the emitters means metres.
+    this.material.uniforms.uPixelScale.value = h * 0.66;
+    this.material.uniforms.uMaxSize.value = Math.max(64, h * 0.28);
+  }
 
   /** Spawns one particle; silently drops it when the field is saturated. */
   emit(o) {
@@ -254,8 +270,10 @@ class DecalField {
     this.baseColor = new Float32Array(capacity * 3);
     this._m = new THREE.Matrix4();
     this._q = new THREE.Quaternion();
+    this._roll = new THREE.Quaternion();
     this._up = new THREE.Vector3(0, 0, 1);
     this._s = new THREE.Vector3();
+    this._p = new THREE.Vector3();
     this._c = new THREE.Color();
   }
 
@@ -268,17 +286,15 @@ class DecalField {
 
     this._q.setFromUnitVectors(this._up, normal);
     // Random roll so repeated hits on one wall never look stamped.
-    const roll = new THREE.Quaternion().setFromAxisAngle(this._up, rand(0, TAU));
-    this._q.multiply(roll);
+    this._roll.setFromAxisAngle(this._up, rand(0, TAU));
+    this._q.multiply(this._roll);
     this._s.set(size, size, size);
-    this._m.compose(
-      new THREE.Vector3(
-        point.x + normal.x * 0.012,
-        point.y + normal.y * 0.012,
-        point.z + normal.z * 0.012,
-      ),
-      this._q, this._s,
+    this._p.set(
+      point.x + normal.x * 0.012,
+      point.y + normal.y * 0.012,
+      point.z + normal.z * 0.012,
     );
+    this._m.compose(this._p, this._q, this._s);
     this.mesh.setMatrixAt(i, this._m);
     this.mesh.instanceMatrix.needsUpdate = true;
 
@@ -743,8 +759,9 @@ export class Effects {
   /** Electric arc for the tesla weapon. */
   arc(from, to, color = 0x66ddff) {
     const steps = 5;
-    const a = new THREE.Vector3().copy(from);
-    const b = new THREE.Vector3();
+    const a = this._arcA || (this._arcA = new THREE.Vector3());
+    const b = this._arcB || (this._arcB = new THREE.Vector3());
+    a.copy(from);
     for (let i = 1; i <= steps; i++) {
       const t = i / steps;
       b.lerpVectors(from, to, t);

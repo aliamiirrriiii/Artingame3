@@ -51,7 +51,9 @@ class Game {
     this.error = null;
 
     this.settings = this._loadSettings();
-    this.presetKey = this.settings.quality || detectTier();
+    const forced = new URLSearchParams(location.search).get('q');
+    this.presetKey = (forced && PRESETS[forced] ? forced : null)
+      || this.settings.quality || detectTier();
     this.preset = PRESETS[this.presetKey] || PRESETS.medium;
 
     this.clock = new THREE.Clock();
@@ -65,8 +67,15 @@ class Game {
     this._tmpV = new THREE.Vector3();
     this._lastPoints = 0;
 
-    this.headless = new URLSearchParams(location.search).has('headless');
-    this.botMode = new URLSearchParams(location.search).get('bot') === '1';
+    // Development/test query parameters. Harmless in normal play — nobody
+    // arrives at the page with these set — and they make the headless harness
+    // able to reach states that would otherwise take ten minutes of play.
+    const q = new URLSearchParams(location.search);
+    this.headless = q.has('headless');
+    this.botMode = q.get('bot') === '1';
+    this.devGive = (q.get('give') || '').split(',').filter(Boolean);
+    this.devWave = Number(q.get('wave') || 0);
+    this.devPoints = Number(q.get('points') || 0);
     this._botT = 0;
   }
 
@@ -141,6 +150,7 @@ class Game {
       await nextFrame();
 
       this.zombies = new ZombieManager(this.stage.scene, this.assets, this.level, this.effects, this.preset);
+      this.zombies.prewarm(this.preset.maxZombies);
       this.player = new Player(this.stage, this.level, this.effects);
       this.viewmodel = new Viewmodel(this.stage, this.materials, this.level.collision);
       this.combat = new Combat({
@@ -259,7 +269,14 @@ class Game {
     this.economy.onStatsChanged = () => this._applyPowerupState();
 
     this.input.onLockChange = (locked) => {
-      if (!locked && this.state === 'playing') this._pause();
+      if (locked && this._wantResume) {
+        this._wantResume = false;
+        this.state = 'playing';
+        this._setScreen(null);
+        audio.resume();
+      } else if (!locked && this.state === 'playing') {
+        this._pause();
+      }
     };
 
     window.addEventListener('resize', () => this._resize());
@@ -352,6 +369,7 @@ class Game {
     this.combat.damageMul = 1;
     this.combat.fireRateMul = 1;
     this.combat.reloadMul = 1;
+    this.combat.upgrades.clear();
     this.combat.grenades = 3;
     this.combat._onSwitch();
     this.powerupsActive.length = 0;
@@ -361,6 +379,10 @@ class Game {
     this.level.flow.compute(this.player.pos.x, this.player.pos.z, true);
     this.director.start();
     this.runTime = 0;
+
+    for (const id of this.devGive) this.combat.give(id);
+    if (this.devPoints) this.economy.points = this.devPoints;
+    if (this.devWave > 1) this.director.wave = this.devWave - 1;
 
     this.hud.setPoints(this.economy.points, 0);
     this.hud.setHealth(this.player.health, this.player.maxHealth);
@@ -380,6 +402,7 @@ class Game {
 
   _pause() {
     if (this.state !== 'playing') return;
+    this._wantResume = false;
     this.state = 'paused';
     this.input.exitLock();
     audio.suspend();
@@ -389,11 +412,24 @@ class Game {
   }
 
   _resume() {
-    if (this.state !== 'paused') return;
-    this.state = 'playing';
-    this._setScreen(null);
-    audio.resume();
+    if (this.state !== 'paused' || this._wantResume) return;
+    // Browsers rate-limit re-locking the pointer after an exit; ask, and let
+    // the lock-change handler decide when we are actually back in the game.
+    this._wantResume = true;
     this.input.requestLock();
+    setTimeout(() => {
+      if (this._wantResume && !this.input.locked) this.input.requestLock();
+    }, 1400);
+    setTimeout(() => {
+      // Last resort: if the browser will not give the lock back, resume anyway
+      // rather than trapping the player on the pause screen.
+      if (this._wantResume) {
+        this._wantResume = false;
+        this.state = 'playing';
+        this._setScreen(null);
+        audio.resume();
+      }
+    }, 3000);
   }
 
   _onDeath() {
@@ -476,9 +512,13 @@ class Game {
     this.level.setLightBudget(this.preset.dynamicLights);
     this.zombies.preset = this.preset;
     this.zombies.setMaxAlive(this.preset.maxZombies);
+    this.zombies.prewarm(this.preset.maxZombies);
     this.effects.setFog(this.stage.fogColor, this.preset.fogDensity);
     this.sky.matchFog(this.stage.fogColor);
     this._applySettings();
+    // The composer (and with it the grade pass) was rebuilt, so re-apply any
+    // power-up tint that was live when the quality changed.
+    this._applyPowerupState();
     this.hud.notice(`QUALITY: ${this.preset.name.toUpperCase()}`, '');
   }
 
@@ -616,6 +656,12 @@ class Game {
     if (playing) this.runTime += dt;
 
     this.player.update(dt, input, { canMove: playing });
+
+    // Death is checked here rather than only on the melee path: you can just
+    // as easily be killed by your own grenade, a spitter, or a barrel you
+    // stood too close to, and none of those go through the zombie hit callback.
+    if (playing && this.player.dead) this._onDeath();
+
     this.combat.update(dt, input, { canAct: playing && !this.player.dead });
     this.economy.update(dt, input, playing && !this.player.dead);
 

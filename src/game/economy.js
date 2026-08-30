@@ -1,5 +1,5 @@
 import { WEAPONS, BOX_POOL } from '../weapons/arsenal.js';
-import { clamp, rand, randInt } from '../core/util.js';
+import { clamp, fmt, rand, randInt } from '../core/util.js';
 import { audio } from '../core/audio.js';
 
 /**
@@ -29,6 +29,8 @@ export const PERKS = {
     blurb: 'Reload twice as fast.', cost: 2200,
   },
 };
+
+const fmtShort = (n) => fmt(Math.max(0, Math.round(n)));
 
 export class Economy {
   constructor({ player, combat, level, director, effects }) {
@@ -131,6 +133,36 @@ export class Economy {
           color: p.color,
         };
       }
+      case 'pack': {
+        const w = WEAPONS[this.combat.id];
+        const wave = this.director?.wave ?? 0;
+        if (wave < (s.minWave ?? 8)) {
+          return {
+            title: 'ARC FURNACE',
+            action: `SEALED UNTIL WAVE ${s.minWave ?? 8}`,
+            cost: 0, affordable: false,
+            detail: 'Still charging. It will not take a weapon yet.',
+            color: '#ff6644',
+          };
+        }
+        if (!this.combat.canUpgrade()) {
+          return {
+            title: 'ARC FURNACE',
+            action: w.magSize === Infinity ? 'CANNOT UPGRADE THIS' : 'ALREADY UPGRADED',
+            cost: 0, affordable: false,
+            detail: `${w.name} cannot go through again.`,
+            color: '#ff6644',
+          };
+        }
+        return {
+          title: 'ARC FURNACE',
+          action: `UPGRADE ${w.short}`,
+          cost: s.cost,
+          affordable: this.points >= s.cost,
+          detail: 'Doubles the held weapon\u2019s damage and adds half again to its reserve.',
+          color: '#ff6644',
+        };
+      }
       case 'box':
         return {
           title: 'MYSTERY BOX',
@@ -148,9 +180,16 @@ export class Economy {
     const p = this._promptFor(s);
     if (!p) return;
 
-    if (p.cost > 0 && !this.canAfford(p.cost)) {
-      audio.click(180, 0.09, 0.3);
-      this._notice(`NEED ${p.cost - this.points} MORE POINTS`, 'bad');
+    // One gate for every blocked case — including the free-but-unavailable
+    // ones (a perk you already have, a weapon that cannot be upgraded, the box
+    // mid-spin), which would otherwise fall through and fire for nothing.
+    if (!p.affordable) {
+      if (p.cost > 0 && this.points < p.cost) {
+        audio.click(180, 0.09, 0.3);
+        this._notice(`NEED ${fmtShort(p.cost - this.points)} MORE POINTS`, 'bad');
+      } else {
+        audio.click(200, 0.06, 0.2);
+      }
       return;
     }
 
@@ -158,6 +197,7 @@ export class Economy {
       case 'wallbuy': return this._buyWeapon(s, p);
       case 'ammo': return this._buyAmmo(s, p);
       case 'perk': return this._buyPerk(s, p);
+      case 'pack': return this._upgradeWeapon(s, p);
       case 'box': return this._openBox(s, p);
     }
   }
@@ -198,6 +238,17 @@ export class Economy {
     this.combat.reloadMul = this.player.hasPerk('quickhands') ? 0.5 : 1;
     // Fire rate stacks with the Carnage power-up, so the game owns that sum.
     if (this.onStatsChanged) this.onStatsChanged();
+  }
+
+  _upgradeWeapon(s, p) {
+    if (!this.combat.canUpgrade()) return;
+    const name = WEAPONS[this.combat.id].name;
+    this.spend(p.cost);
+    this.combat.upgrade();
+    audio.chime([48, 55, 60, 67, 72], 0.07, 0.42, 'sawtooth');
+    this.fx.explosion(s.pos, 1.8, 0xff5522);
+    this._notice(`${name} UPGRADED`, 'good');
+    if (this.onPurchase) this.onPurchase(s);
   }
 
   /**

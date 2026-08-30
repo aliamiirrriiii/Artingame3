@@ -1,0 +1,240 @@
+#!/usr/bin/env node
+/**
+ * Fast logic tests — no browser, no GPU. These cover the pure systems where a
+ * regression is easy to introduce and hard to notice by playing: navigation,
+ * damage falloff, the health and wave curves, and the pooling primitives.
+ *
+ *   node tools/units.mjs
+ */
+import assert from 'node:assert/strict';
+
+import { Box, CollisionWorld, FlowField } from '../src/world/collision.js';
+import { Pool, RNG, clamp, damp, angleDelta, RollingAverage } from '../src/core/util.js';
+import { WEAPONS, damageAtRange, fireInterval, BOX_POOL } from '../src/weapons/arsenal.js';
+import { ARCHETYPES } from '../src/entities/zombieTypes.js';
+
+let passed = 0, failed = 0;
+const test = (name, fn) => {
+  try { fn(); passed++; console.log(`  ok   ${name}`); }
+  catch (e) { failed++; console.log(`  FAIL ${name}\n       ${e.message}`); }
+};
+
+console.log('\ncollision');
+
+test('circle is pushed out of a box', () => {
+  const w = new CollisionWorld(6);
+  w.add(new Box(0, 0, 0, 2, 2, 3));           // 4x4 footprint, 3 tall
+  const p = { x: 1.5, y: 0, z: 0 };
+  w.resolveCircle(p, 0.5, 0.2, 1.8, []);
+  assert.ok(p.x > 2.4, `expected ejection past the face, got x=${p.x}`);
+});
+
+test('a circle above the box is untouched', () => {
+  const w = new CollisionWorld(6);
+  w.add(new Box(0, 0, 0, 2, 2, 1));
+  const p = { x: 1.5, y: 2, z: 0 };
+  w.resolveCircle(p, 0.5, 2.2, 3.8, []);
+  assert.equal(p.x, 1.5);
+});
+
+test('raycast hits the near face with the right normal', () => {
+  const w = new CollisionWorld(6);
+  w.add(new Box(0, 0, 0, 1, 1, 2));
+  const hit = w.raycast({ x: -5, y: 1, z: 0 }, { x: 1, y: 0, z: 0 }, 20, {});
+  assert.ok(hit, 'expected a hit');
+  assert.ok(Math.abs(hit.distance - 4) < 1e-6, `distance ${hit.distance}`);
+  assert.ok(hit.normal.x < -0.99, `normal ${hit.normal.x}`);
+});
+
+test('raycast misses when the ray passes beside the box', () => {
+  const w = new CollisionWorld(6);
+  w.add(new Box(0, 0, 0, 1, 1, 2));
+  assert.equal(w.raycast({ x: -5, y: 1, z: 5 }, { x: 1, y: 0, z: 0 }, 20, {}), null);
+});
+
+test('a yaw-rotated box is hit on its rotated face', () => {
+  const w = new CollisionWorld(6);
+  // hx=3, hz=0.5 rotated 90 degrees: the long axis now runs along Z, so the
+  // box occupies x in [-0.5, 0.5] and z in [-3, 3].
+  w.add(new Box(0, 0, 0, 3, 0.5, 2, Math.PI / 2));
+
+  // End on, down the long axis.
+  const endOn = w.raycast({ x: 0, y: 1, z: -5 }, { x: 0, y: 0, z: 1 }, 20, {});
+  assert.ok(endOn && Math.abs(endOn.distance - 2) < 1e-6, `end-on ${endOn?.distance}`);
+
+  // Broadside, within the long extent: hits the narrow face at x = -0.5.
+  const side = w.raycast({ x: -5, y: 1, z: 2.5 }, { x: 1, y: 0, z: 0 }, 20, {});
+  assert.ok(side && Math.abs(side.distance - 4.5) < 1e-6, `broadside ${side?.distance}`);
+
+  // Past the end of the long extent: nothing there.
+  assert.equal(w.raycast({ x: -5, y: 1, z: 4 }, { x: 1, y: 0, z: 0 }, 20, {}), null);
+});
+
+test('visible() is blocked by a wall between two points', () => {
+  const w = new CollisionWorld(6);
+  w.add(new Box(0, 0, 0, 0.5, 5, 4));
+  assert.equal(w.visible({ x: -5, y: 1, z: 0 }, { x: 5, y: 1, z: 0 }), false);
+  assert.equal(w.visible({ x: -5, y: 1, z: 8 }, { x: 5, y: 1, z: 8 }), true);
+});
+
+console.log('\nflow field');
+
+test('routes around a wall instead of through it', () => {
+  const w = new CollisionWorld(6);
+  // A wall across x = 0 with a gap at the far +Z end.
+  w.add(new Box(0, 0, -6, 0.5, 6, 3));
+  const f = new FlowField(20, 1.0).bake(w, 0.4, 0.5);
+  assert.ok(f.compute(-8, -6, true), 'flood should run');
+
+  // A point on the far side is reachable, but only the long way round.
+  const straight = Math.hypot(8 - -8, 0);
+  const routed = f.distanceAt(8, -6);
+  assert.ok(routed > 0, 'target should be reachable');
+  assert.ok(routed > straight, `expected a detour, got ${routed} vs ${straight}`);
+});
+
+test('flow vectors point down the gradient', () => {
+  const w = new CollisionWorld(6);
+  const f = new FlowField(20, 1.0).bake(w, 0.4, 0.5);
+  f.compute(0, 0, true);
+  const v = f.sample(10, 0, { x: 0, z: 0 });
+  assert.ok(v.x < -0.7, `expected to steer toward -X, got ${v.x}`);
+});
+
+test('a sealed border is not walkable', () => {
+  const f = new FlowField(20, 1.0);
+  f.bake(new CollisionWorld(6), 0.4, 0.5);
+  f.sealBorder(2);
+  assert.equal(f.walkable(19.5, 0), false);
+  assert.equal(f.walkable(0, 0), true);
+});
+
+test('geometry a zombie can step over is not an obstacle', () => {
+  const w = new CollisionWorld(6);
+  w.add(new Box(0, 0, 0, 3, 3, 0.12));   // a kerb
+  const f = new FlowField(20, 1.0).bake(w, 0.4, 0.55);
+  assert.equal(f.walkable(0, 0), true);
+});
+
+console.log('\nweapons');
+
+test('damage falls off between the breakpoints only', () => {
+  const w = WEAPONS.rifle;
+  assert.equal(damageAtRange(w, 0), w.damage);
+  assert.equal(damageAtRange(w, w.falloff[0]), w.damage);
+  const mid = damageAtRange(w, (w.falloff[0] + w.falloff[1]) / 2);
+  assert.ok(mid < w.damage && mid > w.damage * w.minDamage);
+  assert.ok(Math.abs(damageAtRange(w, 500) - w.damage * w.minDamage) < 1e-9);
+});
+
+test('every weapon is internally consistent', () => {
+  for (const w of Object.values(WEAPONS)) {
+    assert.ok(w.name && w.short, `${w.id} needs a name`);
+    assert.ok(w.rpm > 0, `${w.id} rpm`);
+    assert.ok(fireInterval(w) > 0);
+    assert.ok(w.model && w.model.type, `${w.id} needs a viewmodel type`);
+    assert.ok(w.recoil && typeof w.recoil.kick === 'number', `${w.id} recoil`);
+    if (w.magSize !== Infinity) {
+      assert.ok(w.reloadTime > 0, `${w.id} needs a reload time`);
+      assert.ok(w.magSize > 0, `${w.id} mag size`);
+    }
+  }
+});
+
+test('the mystery box can hand out something', () => {
+  assert.ok(BOX_POOL.length >= 3);
+  assert.ok(BOX_POOL.every((w) => w.boxWeight > 0));
+});
+
+console.log('\nbalance curves');
+
+const health = (spec, wave) => {
+  const w = Math.max(0, wave - 1);
+  const growth = spec.boss
+    ? 1 + Math.max(0, wave - 5) * 0.25
+    : (w <= 9 ? 1 + w * 0.22 : 1 + 9 * 0.22 + (w - 9) * 0.30);
+  return Math.round(spec.health * growth * (spec.healthScale ?? 1));
+};
+
+test('health rises monotonically and stays killable', () => {
+  const walker = ARCHETYPES.walker;
+  let prev = 0;
+  for (let wave = 1; wave <= 30; wave++) {
+    const h = health(walker, wave);
+    assert.ok(h > prev, `wave ${wave} health did not rise`);
+    prev = h;
+  }
+  // An upgraded rifle headshot must still drop a wave-30 walker in a burst.
+  const perHead = WEAPONS.rifle.damage * WEAPONS.rifle.headMul * 2;
+  assert.ok(health(walker, 30) / perHead < 5,
+    `wave 30 walker takes ${(health(walker, 30) / perHead).toFixed(1)} upgraded headshots`);
+});
+
+test('a wave-5 boss dies to a full magazine or three', () => {
+  const boss = health(ARCHETYPES.abomination, 5);
+  const shotgunMag = WEAPONS.shotgun.magSize * WEAPONS.shotgun.pellets * WEAPONS.shotgun.damage;
+  assert.ok(boss / shotgunMag < 4, `boss takes ${(boss / shotgunMag).toFixed(1)} shotgun mags`);
+  assert.ok(boss / shotgunMag > 0.8, 'boss should not fall to a single magazine');
+});
+
+test('archetype table is well formed', () => {
+  for (const a of Object.values(ARCHETYPES)) {
+    assert.ok(a.health > 0 && a.budget > 0, `${a.id} health/budget`);
+    assert.ok(a.speed[0] > 0 && a.speed[1] >= a.speed[0], `${a.id} speed range`);
+    assert.ok(a.scale[0] > 0 && a.scale[1] >= a.scale[0], `${a.id} scale range`);
+    assert.ok(a.heightM > 0.5 && a.heightM < 6, `${a.id} height`);
+    assert.ok(a.points > 0 && a.minWave >= 1, `${a.id} points/minWave`);
+    assert.ok(Array.isArray(a.tint) && a.tint.length > 0, `${a.id} tint`);
+    if (a.charges) assert.ok(a.sprintSpeed > a.speed[1], `${a.id} charge speed`);
+  }
+});
+
+console.log('\nprimitives');
+
+test('pool hands out and takes back without leaking', () => {
+  const p = new Pool(3, (i) => ({ i }));
+  const a = p.acquire(), b = p.acquire(), c = p.acquire();
+  assert.equal(p.acquire(), null);
+  assert.equal(p.count, 3);
+  p.release(b);
+  assert.equal(p.count, 2);
+  assert.ok(p.acquire());
+  p.releaseAll();
+  assert.equal(p.count, 0);
+  assert.ok(a && c);
+});
+
+test('seeded RNG is deterministic', () => {
+  const a = new RNG(42), b = new RNG(42);
+  for (let i = 0; i < 50; i++) assert.equal(a.next(), b.next());
+  assert.notEqual(new RNG(1).next(), new RNG(2).next());
+});
+
+test('damp is frame-rate independent', () => {
+  // One big step and many small ones must land in the same place.
+  let big = 0;
+  big = damp(big, 1, 5, 0.5);
+  let small = 0;
+  for (let i = 0; i < 50; i++) small = damp(small, 1, 5, 0.01);
+  assert.ok(Math.abs(big - small) < 1e-9, `${big} vs ${small}`);
+});
+
+test('angleDelta takes the short way round', () => {
+  assert.ok(Math.abs(angleDelta(0.1, -0.1) - -0.2) < 1e-9);
+  assert.ok(Math.abs(angleDelta(3.0, -3.0) - 0.2831853) < 1e-6);
+});
+
+test('rolling average converges', () => {
+  const r = new RollingAverage(10, 0);
+  for (let i = 0; i < 20; i++) r.push(5);
+  assert.ok(Math.abs(r.mean - 5) < 1e-9);
+});
+
+test('clamp behaves at the edges', () => {
+  assert.equal(clamp(-1, 0, 1), 0);
+  assert.equal(clamp(2, 0, 1), 1);
+  assert.equal(clamp(0.5, 0, 1), 0.5);
+});
+
+console.log(`\n${passed} passed, ${failed} failed\n`);
+process.exit(failed ? 1 : 0);

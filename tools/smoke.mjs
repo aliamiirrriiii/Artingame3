@@ -56,7 +56,8 @@ try {
   p.on('pageerror', (e) => logs.push(`[pageerror] ${e.message}`));
 
   const bot = process.argv.includes('--bot') ? '&bot=1' : '';
-  const url = `http://localhost:${port}/${page}?q=${q}&headless=1${bot}`;
+  const extra = arg('params', '') ? `&${arg('params', '')}` : '';
+  const url = `http://localhost:${port}/${page}?q=${q}&headless=1${bot}${extra}`;
   console.log('opening', url);
   await p.goto(url, { waitUntil: 'domcontentloaded' });
 

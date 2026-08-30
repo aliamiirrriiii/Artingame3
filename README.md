@@ -3,7 +3,7 @@
 A wave-survival zombie shooter that runs in the browser on WebGL2 — physically
 based night rendering, a flow-field horde, and a twelve-weapon arsenal.
 
-![wave one](docs/screenshot-wave.png)
+![Wave three, holding the north street](docs/screenshot-wave.png)
 
 ```bash
 npm run assets     # download the asset pack from the web (once)
@@ -87,12 +87,24 @@ Points come from **damage as well as kills**, so nothing you shoot is wasted,
 and chipping a brute still pays for your next weapon. Headshots do far more
 damage and pay 50% more.
 
-Spend points on wall-buys, the ammo crate, four perks (Juggernog, Stamin-Up,
-Double Tap, Speed Cola) and the mystery box — which moves on after a few uses,
-so spend while it is close. Six power-ups drop from kills: Insta-Kill, Double
-Points, Max Ammo, Nuke, Deep Freeze and Carnage.
+Spend points on:
+
+- **Wall-buys** — one weapon mounted on each corner block's plaza-facing wall.
+- **The ammo crate** in the plaza — tops up everything you carry, plus grenades.
+- **Four perks** — Juggernog (double health), Stamin-Up (speed), Double Tap
+  (fire rate), Speed Cola (reload).
+- **The mystery box** — a weapon at random, after a spin that is the most
+  exciting three seconds in the game. It moves on after a few uses, so spend
+  while it is close.
+- **The Arc Furnace**, from wave 8 — doubles the held weapon's damage and adds
+  half again to its reserve. It is what keeps a wave-3 rifle relevant at wave 25.
+
+Six power-ups drop from kills: Insta-Kill, Double Points, Max Ammo, Nuke, Deep
+Freeze and Carnage.
 
 ### The arsenal
+
+![The Arc Projector](docs/screenshot-arc.png)
 
 Twelve weapons, each built to solve a problem the others do not.
 
@@ -189,17 +201,28 @@ vendor/      three.js r180 (build + addons), vendored so there is no install ste
 
 ## Testing
 
-The game ships with a headless harness built on Playwright:
+Two layers, both runnable from a clean checkout:
 
 ```bash
-npm run smoke                                        # boot, load, build, render
-node tools/smoke.mjs --page index.html --bot --run 60 # play it with a scripted bot
+npm test      # 22 logic tests — no browser, no GPU, runs in under a second
+npm run smoke # boot, load assets, build the level, render, report timings
+node tools/smoke.mjs --page index.html --bot --run 60   # play it with a bot
 ```
+
+`npm test` covers the pure systems where a regression is easy to introduce and
+hard to notice by playing: collision ejection and ray/OBB intersection, whether
+the flow field actually routes around a wall rather than through it, damage
+falloff, the health and wave curves staying inside a killable band, and the
+pooling primitives.
 
 `--bot` runs a scripted player that walks, aims, fires, reloads, throws grenades
 and buys from stations, so a test run exercises spawning, pathing, hit
 detection, gore, the economy and wave transitions with nobody at the mouse. Any
 console error, unhandled rejection or page error fails the run.
+
+Useful flags: `--viewport 640x360` (software rendering is slow at full size),
+`--shot out.png --views 4`, and `--params "give=rifle,tesla&wave=5&points=9000"`
+to drop the harness straight into a boss wave with an arsenal.
 
 ## Licence
 

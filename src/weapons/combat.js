@@ -44,6 +44,8 @@ export class Combat {
     this.grenadeCooldown = 0;
     this.shotsFired = 0;
     this.shotsHit = 0;
+    // Weapon ids that have been through the upgrade station.
+    this.upgrades = new Set();
 
     // Damage multipliers granted by power-ups and perks.
     this.damageMul = 1;
@@ -72,6 +74,12 @@ export class Combat {
     this._tmp2 = new THREE.Vector3();
     this._chainHit = [];
     this._radiusOut = [];
+    // Explosions and burn ticks get their own scratch vectors. They can fire
+    // in the middle of a shotgun's pellet loop (a barrel going off), and
+    // sharing `_dir` there sent the remaining pellets somewhere else entirely.
+    this._exDir = new THREE.Vector3();
+    this._exPoint = new THREE.Vector3();
+    this._burnDir = new THREE.Vector3();
 
     this.vm.equip(this.spec);
   }
@@ -82,6 +90,31 @@ export class Combat {
   get spec() { return WEAPONS[this.owned[this.index]]; }
   get mag() { return this.ammo.get(this.id)?.mag ?? 0; }
   get reserve() { return this.ammo.get(this.id)?.reserve ?? 0; }
+
+  /** 2x damage on an upgraded weapon. */
+  get upgradeMul() { return this.upgrades.has(this.id) ? 2 : 1; }
+
+  /** Total outgoing damage scale: power-ups times weapon upgrade. */
+  _dmgScale() { return this.damageMul * this.upgradeMul; }
+
+  /** Sends the held weapon through the upgrade station. */
+  upgrade(id = this.id) {
+    if (this.upgrades.has(id)) return false;
+    const w = WEAPONS[id];
+    if (!w || w.magSize === Infinity) return false;
+    this.upgrades.add(id);
+    const a = this.ammo.get(id);
+    if (a) {
+      a.mag = w.magSize;
+      a.reserve = Math.round((w.reserveMax ?? w.reserve ?? 0) * 1.5);
+    }
+    return true;
+  }
+
+  canUpgrade(id = this.id) {
+    const w = WEAPONS[id];
+    return !!w && w.magSize !== Infinity && !this.upgrades.has(id);
+  }
 
   _initAmmo(id) {
     const w = WEAPONS[id];
@@ -324,8 +357,11 @@ export class Combat {
     const radius = blast.radius;
     this.fx.explosion(pos, radius, blast.color ?? 0xff8a30);
     audio.explosion(pos, clamp(radius / 5, 0.5, 1.6));
-    this.stage.muzzleFlash(pos, 60 * (radius / 5), 0xffa040);
-    this.stage.flash(clamp(radius / 22, 0.05, 0.4));
+    this.stage.muzzleFlash(pos, 34 * (radius / 5), 0xffa040);
+    // Scale the whiteout down when it goes off in your face — the shake and
+    // the damage already tell you what happened.
+    const near = clamp(this.player.pos.distanceTo(pos) / 8, 0.25, 1);
+    this.stage.flash(clamp(radius / 26, 0.04, 0.3) * near);
 
     const dPlayer = this.player.pos.distanceTo(pos);
     this.stage.addShake(clamp(1.6 / (1 + dPlayer * 0.25), 0.05, 0.9));
@@ -336,9 +372,9 @@ export class Combat {
       const d = Math.hypot(z.pos.x - pos.x, z.pos.z - pos.z);
       const t = clamp(1 - d / radius, 0, 1);
       const dmg = blast.damage * lerp(blast.falloff ?? 0.35, 1, t) * this.damageMul;
-      this._dir.set(z.pos.x - pos.x, 0.35, z.pos.z - pos.z).normalize();
-      this._tmp.set(z.pos.x, z.pos.y + z.height * 0.5, z.pos.z);
-      const r = this.zm.damage(z, this.instaKill ? 1e9 : dmg, this._tmp, this._dir,
+      this._exDir.set(z.pos.x - pos.x, 0.35, z.pos.z - pos.z).normalize();
+      this._exPoint.set(z.pos.x, z.pos.y + z.height * 0.5, z.pos.z);
+      const r = this.zm.damage(z, this.instaKill ? 1e9 : dmg, this._exPoint, this._exDir,
         { crit: false, stagger: 0.9 * t, byPlayer: true });
       if (r) { points += r.points; if (r.killed) killed++; }
     }
@@ -466,7 +502,7 @@ export class Combat {
         const z = zHit.zombie;
         hitList.push(z);
         const dist = travelled + zDist;
-        let dmg = damageAtRange(w, dist) * this.damageMul;
+        let dmg = damageAtRange(w, dist) * this._dmgScale();
         if (zHit.head) dmg *= w.headMul ?? 2;
         if (this.instaKill) dmg = 1e9;
 
@@ -563,14 +599,16 @@ export class Combat {
 
     // Walk the chain, each link weaker than the last.
     let points = 0, kills = 0;
-    let from = this._muzzle.clone();
+    const from = this._chainFrom || (this._chainFrom = new THREE.Vector3());
+    const p = this._chainPoint || (this._chainPoint = new THREE.Vector3());
+    from.copy(this._muzzle);
     let target = first.zombie;
-    let dmg = w.damage * this.damageMul;
+    let dmg = w.damage * this._dmgScale();
     const chain = this._chainHit;
     chain.length = 0;
 
     for (let i = 0; i < w.chains && target; i++) {
-      const p = new THREE.Vector3(target.pos.x, target.pos.y + target.height * 0.6, target.pos.z);
+      p.set(target.pos.x, target.pos.y + target.height * 0.6, target.pos.z);
       this.fx.arc(from, p, i === 0 ? 0x9fe8ff : 0x66ddff);
       const d = this._tmp.copy(p).sub(from).normalize();
       const r = this.zm.damage(target, this.instaKill ? 1e9 : dmg, p, d,
@@ -586,7 +624,7 @@ export class Combat {
         const d2 = dx * dx + dz * dz;
         if (d2 < bestD) { bestD = d2; next = z; }
       }
-      from = p;
+      from.copy(p);
       target = next;
       dmg *= w.chainFalloff;
     }
@@ -597,7 +635,11 @@ export class Combat {
   _fireProjectile(w) {
     this.player.aimRay(this._origin, this._dir);
     this.vm.muzzleWorld(this._muzzle);
-    this.spawnProjectile('grenade', this._muzzle, this._dir, w, w.projectileSpeed);
+    // The upgrade doubles the shell, not the power-up — `explode` already
+    // applies `damageMul` when the round goes off.
+    const spec = this.upgradeMul === 1 ? w
+      : { ...w, blast: { ...w.blast, damage: w.blast.damage * this.upgradeMul } };
+    this.spawnProjectile('grenade', this._muzzle, this._dir, spec, w.projectileSpeed);
     this.fx.muzzle(this._muzzle, this._dir, 1.8);
     this.stage.muzzleFlash(this._muzzle, 24);
     audio.gunshot(this._muzzle, w.sound);
@@ -625,12 +667,12 @@ export class Combat {
 
       hit = true;
       const p = this._tmp.set(z.pos.x, z.pos.y + z.height * 0.55, z.pos.z);
-      const dmg = (this.instaKill ? 1e9 : w.damage * this.damageMul) * dt;
+      const dmg = (this.instaKill ? 1e9 : w.damage * this._dmgScale()) * dt;
       const r = this.zm.damage(z, dmg, p, this._dir, { crit: false, stagger: 0, byPlayer: true });
       if (r) { points += r.points; if (r.killed) kills++; }
       // Ignite: damage keeps ticking after the trigger is released.
       z.burnT = w.burn.duration;
-      z.burnDps = w.burn.dps * this.damageMul;
+      z.burnDps = w.burn.dps * this._dmgScale();
     }
     if (points && this.onPoints) this.onPoints(points, 'damage');
     if (kills && this.onHitMarker) this.onHitMarker(false, true);
@@ -658,7 +700,7 @@ export class Combat {
       const p = this._tmp.set(best.pos.x, best.pos.y + best.height * 0.72, best.pos.z);
       // Melee always aims for the neck: generous, and it feels good.
       const crit = Math.random() < 0.4;
-      const dmg = this.instaKill ? 1e9 : w.damage * this.damageMul * (crit ? w.headMul : 1);
+      const dmg = this.instaKill ? 1e9 : w.damage * this._dmgScale() * (crit ? w.headMul : 1);
       const r = this.zm.damage(best, dmg, p, this._dir,
         { crit, stagger: w.stagger, byPlayer: true });
       this._afterShot(w, r?.points ?? 0, r?.killed ? 1 : 0, crit, true);
@@ -873,8 +915,8 @@ export class Combat {
         this.fx.ember({ x: z.pos.x, y: z.pos.y + z.height * rand(0.3, 0.9), z: z.pos.z }, 0.8);
       }
       if (z.health <= 0) {
-        this._dir.set(gauss() * 0.4, 0.4, gauss() * 0.4).normalize();
-        this.zm._kill(z, this._dir, false, true);
+        this._burnDir.set(gauss() * 0.4, 0.4, gauss() * 0.4).normalize();
+        this.zm._kill(z, this._burnDir, false, true);
         if (this.onHitMarker) this.onHitMarker(false, true);
         points += z.spec.points;
       }
@@ -886,8 +928,12 @@ export class Combat {
   hudState() {
     const w = this.spec;
     const a = this.ammo.get(this.id);
+    const up = this.upgrades.has(w.id);
     return {
-      id: w.id, name: w.name, short: w.short,
+      id: w.id,
+      name: up ? `${w.name} ✦` : w.name,
+      short: up ? `${w.short}✦` : w.short,
+      upgraded: up,
       mag: a.mag === Infinity ? '∞' : Math.ceil(a.mag),
       reserve: a.reserve === Infinity ? '∞' : Math.floor(a.reserve),
       magSize: w.magSize === Infinity ? '∞' : w.magSize,
@@ -898,7 +944,7 @@ export class Combat {
       spinUp: this.spinUp,
       grenades: this.grenades,
       ads: this.adsAmount > 0.5,
-      owned: this.owned.map((id) => WEAPONS[id].short),
+      owned: this.owned.map((id) => WEAPONS[id].short + (this.upgrades.has(id) ? '✦' : '')),
       index: this.index,
     };
   }

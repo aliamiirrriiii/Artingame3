@@ -277,12 +277,26 @@ html, body {
 
 .screen {
   position: absolute; inset: 0; display: none;
-  place-items: center; background: rgba(4,5,8,.9);
+  background: rgba(4,5,8,.9);
   backdrop-filter: blur(9px); pointer-events: auto;
+  overflow: auto; padding: 4vh 4vw;
 }
-.screen.show { display: grid; }
+/* flex + `margin:auto` rather than `place-items:center`, so a panel taller
+   than the viewport scrolls instead of having its top clipped off. */
+.screen.show { display: flex; }
 
-.panel { width: min(680px, 90vw); }
+.panel { width: min(680px, 92vw); margin: auto; }
+
+@media (max-height: 620px) {
+  .title { font-size: clamp(26px, 5vw, 40px); }
+  .rule { margin: 16px 0; }
+  .btn { padding: 10px 14px; margin-bottom: 7px; }
+  #over-stats { margin: 16px 0; gap: 12px 26px; }
+  .stat .v { font-size: 21px; }
+}
+@media (max-width: 720px) {
+  .cols { grid-template-columns: 1fr; gap: 20px; }
+}
 
 .title {
   font-family: var(--mono); font-weight: 700; letter-spacing: -.02em;
