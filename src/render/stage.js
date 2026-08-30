@@ -12,12 +12,16 @@ import { clamp, damp } from '../core/util.js';
 /**
  * Owns the renderer, the scene's lighting rig and the post chain.
  *
- * The look: a physically-lit night. A cold moon key with a shadow frustum that
- * rides along with the player (so a 2k map covers 50 m at full density instead
- * of smearing across the whole arena), HDRI image-based ambient, exponential
- * fog tuned to the draw distance, and a hand-held flashlight that is the real
- * light source for most of what you actually shoot at.
+ * The look: a physically-lit afternoon. A warm sun key with a shadow frustum
+ * that rides along with the player (so a 2k map covers 50 m at full density
+ * instead of smearing across the whole arena), HDRI image-based ambient, a
+ * strong sky/ground bounce because a daylight shadow is blue-filled rather than
+ * black, exponential haze tuned to the draw distance, and a flashlight that now
+ * matters only indoors.
  */
+/** Daylight carries far less haze than the night build wanted. */
+const DAY_FOG = 0.5;
+
 export class Stage {
   constructor(canvas, preset) {
     this.canvas = canvas;
@@ -33,7 +37,7 @@ export class Stage {
     });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMappingExposure = 0.75;
     this.renderer.shadowMap.enabled = preset.shadows;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.shadowMap.autoUpdate = true;
@@ -55,7 +59,9 @@ export class Stage {
     this._shakeTrauma = 0;
     this._shakeTime = 0;
     this._flashTimer = 0;
-    this.exposureTarget = 1.05;
+    // Matches the constructor's starting exposure: this is damped toward every
+    // frame, so a different value up there is overwritten within a second.
+    this.exposureTarget = 0.75;
   }
 
   // ------------------------------------------------------------------ setup
@@ -63,12 +69,14 @@ export class Stage {
   _buildLights() {
     const p = this.preset;
 
-    // Moon key light. Rotated slightly off-axis from the camera so the arena
-    // reads with depth rather than flat frontal light.
-    this.moon = new THREE.DirectionalLight(0xa8c6ff, 1.9);
-    this.moon.position.set(-38, 52, 26);
-    this.moon.castShadow = p.shadows;
-    const s = this.moon.shadow;
+    // Sun key light. Rotated well off-axis from the camera so the arena reads
+    // with depth rather than flat frontal light, and kept at a mid-afternoon
+    // elevation: a noon sun puts every shadow directly under its object and
+    // flattens the whole street.
+    this.sun = new THREE.DirectionalLight(0xfff8ee, 2.05);
+    this.sun.position.set(-42, 58, 30);
+    this.sun.castShadow = p.shadows;
+    const s = this.sun.shadow;
     s.mapSize.set(p.shadowMapSize, p.shadowMapSize);
     s.camera.near = 1;
     s.camera.far = 180;
@@ -76,15 +84,19 @@ export class Stage {
     s.normalBias = 0.05;
     s.radius = 2.4;
     this._setShadowExtent(p.shadowDistance);
-    this.scene.add(this.moon);
-    this.scene.add(this.moon.target);
+    this.scene.add(this.sun);
+    this.scene.add(this.sun.target);
 
-    // Sky/ground bounce so shadowed sides never go fully black.
-    this.hemi = new THREE.HemisphereLight(0x35496b, 0x0b0908, 1.0);
+    // Sky/ground bounce. Under a real sky this is doing most of the work in
+    // shadow, so it is much stronger than the night version was: a daylight
+    // shadow is blue-filled, not black.
+    this.hemi = new THREE.HemisphereLight(0x9fc0e8, 0x6b6154, 0.95);
     this.scene.add(this.hemi);
 
-    // Flashlight. This is the player's real weapon against the dark.
-    this.flashlight = new THREE.SpotLight(0xfff2d8, 90, 42, 0.48, 0.50, 1.7);
+    // Flashlight. In daylight it earns its keep only inside the blocks and
+    // under the overpass, so it is dimmer than it was at night — at full night
+    // strength it blew out everything it touched in an already-lit street.
+    this.flashlight = new THREE.SpotLight(0xfff2d8, 42, 34, 0.48, 0.50, 1.7);
     this.flashlight.castShadow = p.shadows && p.name !== 'Low';
     this.flashlight.shadow.mapSize.set(1024, 1024);
     this.flashlight.shadow.camera.near = 0.4;
@@ -101,15 +113,15 @@ export class Stage {
     this.scene.add(this.muzzleLight);
     this._muzzleDecay = 0;
 
-    // A tiny rim light rides on the camera so the weapon still reads as a solid
-    // object when the player is standing in total darkness with the light off.
-    this.viewRim = new THREE.PointLight(0x9ab4dd, 1.1, 2.2, 2.0);
+    // A tiny rim light rides on the camera so the weapon keeps some shape when
+    // the player is facing into shadow.
+    this.viewRim = new THREE.PointLight(0xbfd2ea, 0.5, 2.2, 2.0);
     this.viewRim.position.set(0.35, 0.1, 0.25);
     this.camera.add(this.viewRim);
   }
 
   _setShadowExtent(dist) {
-    const c = this.moon.shadow.camera;
+    const c = this.sun.shadow.camera;
     c.left = -dist; c.right = dist;
     c.top = dist; c.bottom = -dist;
     c.updateProjectionMatrix();
@@ -166,25 +178,34 @@ export class Stage {
 
   // ------------------------------------------------------------ environment
 
-  applyEnvironment(envMap, { intensity = 0.4, fog = 0x0b1018 } = {}) {
-    // The HDRI is used for image-based lighting only. NightSky draws the
-    // backdrop, which keeps the horizon under our control and stops the
-    // HDRI's brightest pixel from dominating the bloom pass.
+  applyEnvironment(envMap, { intensity = 0.4, fog = 0xb9c6d4 } = {}) {
+    // The HDRI is used for image-based lighting only. Sky draws the backdrop,
+    // which keeps the horizon under our control and stops the HDRI's brightest
+    // pixel from dominating the bloom pass.
     this.scene.environment = envMap;
     this.scene.environmentIntensity = intensity;
     this.scene.background = null;
-    this.scene.fog = new THREE.FogExp2(fog, this.preset.fogDensity);
+    // Half the night density. That fog was tuned to hide the arena's edge in
+    // the dark, where it read as depth; in daylight the same figure turns the
+    // far side of the street into a sheet of milk.
+    this.fogDensity = this.preset.fogDensity * DAY_FOG;
+    this.scene.fog = new THREE.FogExp2(fog, this.fogDensity);
     this.fogColor = new THREE.Color(fog);
   }
 
   setMood(mood) {
     // Called on boss waves and power-ups to re-tint the whole frame.
-    const { fog, fogDensity, moonColor, moonIntensity, exposure } = mood;
+    const { fog, fogDensity, sunColor, sunIntensity, exposure } = mood;
     if (fog !== undefined && this.scene.fog) this.scene.fog.color.setHex(fog);
     if (fogDensity !== undefined && this.scene.fog) this.scene.fog.density = fogDensity;
-    if (moonColor !== undefined) this.moon.color.setHex(moonColor);
-    if (moonIntensity !== undefined) this.moon.intensity = moonIntensity;
+    if (sunColor !== undefined) this.sun.color.setHex(sunColor);
+    if (sunIntensity !== undefined) this.sun.intensity = sunIntensity;
     if (exposure !== undefined) this.exposureTarget = exposure;
+    if (fog !== undefined) this.fogColor.setHex(fog);
+    // The sky's haze band and the particle fog are tuned to match the scene
+    // fog exactly; leaving them behind on a mood change puts a visible seam
+    // along the horizon where the two disagree.
+    this.onMood?.(this);
   }
 
   // ---------------------------------------------------------------- quality
@@ -193,15 +214,16 @@ export class Stage {
     this.preset = preset;
     this.renderer.shadowMap.enabled = preset.shadows;
     this.renderer.shadowMap.needsUpdate = true;
-    this.moon.castShadow = preset.shadows;
-    this.moon.shadow.mapSize.set(preset.shadowMapSize, preset.shadowMapSize);
-    this.moon.shadow.map?.dispose();
-    this.moon.shadow.map = null;
+    this.sun.castShadow = preset.shadows;
+    this.sun.shadow.mapSize.set(preset.shadowMapSize, preset.shadowMapSize);
+    this.sun.shadow.map?.dispose();
+    this.sun.shadow.map = null;
     this.flashlight.castShadow = preset.shadows && preset.name !== 'Low';
     this._setShadowExtent(preset.shadowDistance);
     this.camera.far = preset.drawDistance;
     this.camera.updateProjectionMatrix();
-    if (this.scene.fog) this.scene.fog.density = preset.fogDensity;
+    this.fogDensity = preset.fogDensity * DAY_FOG;
+    if (this.scene.fog) this.scene.fog.density = this.fogDensity;
     this.renderScale = preset.renderScale;
     this._buildComposer();
     this.resize(this._width, this._height);
@@ -257,18 +279,18 @@ export class Stage {
   }
 
   /**
-   * Keeps the moon's shadow frustum centred a little ahead of the player so the
+   * Keeps the sun's shadow frustum centred a little ahead of the player so the
    * shadow texels land where the player is actually looking.
    */
   updateShadowFocus(playerPos, forward) {
-    const t = this.moon.target.position;
+    const t = this.sun.target.position;
     t.set(
       playerPos.x + forward.x * this.preset.shadowDistance * 0.35,
       0,
       playerPos.z + forward.z * this.preset.shadowDistance * 0.35,
     );
-    this.moon.position.set(t.x - 38, 52, t.z + 26);
-    this.moon.target.updateMatrixWorld();
+    this.sun.position.set(t.x - 42, 58, t.z + 30);
+    this.sun.target.updateMatrixWorld();
   }
 
   updateFlashlight(camera, on, intensity = 90) {

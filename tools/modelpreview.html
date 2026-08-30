@@ -89,6 +89,17 @@ try {
       // Applied after any node picking: reparenting into a new group would
       // otherwise drop a rotation set on the original root.
       if (m.orient) { root.rotation.set(...m.orient); root.updateMatrixWorld(true); }
+      // ?anim=<seconds> plays the model's own first clip and freezes it there.
+      // A rigged viewmodel's bind pose is not its intended pose: the weapon is
+      // parented into the hand by the animation, so without this the gun sits
+      // wherever the rigger left it and the arms read as a T-pose.
+      if (q.has('anim') && g.animations && g.animations.length) {
+        const mixer = new THREE.AnimationMixer(g.scene);
+        mixer.clipAction(g.animations[0]).play();
+        mixer.update(Number(q.get('anim')) || 0);
+        g.scene.updateMatrixWorld(true);
+        report.models.push({ clip: g.animations[0].name, dur: +g.animations[0].duration.toFixed(2) });
+      }
       // Normalise every model to the same on-screen height so they can be
       // compared, and record the true size for scaling them in the game.
       const box = new THREE.Box3().setFromObject(root);
@@ -113,7 +124,9 @@ try {
     i++;
   }
 
-  camera.position.set(0, 1.4, 8.2);
+  // ?zoom= pulls the camera in: a viewmodel with arms is much wider than it is
+  // tall, so normalising by the largest dimension leaves it small in frame.
+  camera.position.set(0, 1.4, 8.2 / Number(q.get('zoom') || 1));
   camera.lookAt(0, 1.0, 0);
 
   let t = 0, frames = 0;

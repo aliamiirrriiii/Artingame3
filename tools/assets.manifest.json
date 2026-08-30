@@ -55,22 +55,16 @@
       "use": "Traffic cone metallic-roughness."
     },
     {
-      "src": "three:textures/equirectangular/moonless_golf_1k.hdr",
-      "dst": "assets/hdri/moonless_night_1k.hdr",
-      "license": "CC0 — Poly Haven",
-      "use": "Primary night image-based lighting + sky"
-    },
-    {
-      "src": "three:textures/equirectangular/venice_sunset_1k.hdr",
-      "dst": "assets/hdri/blood_dusk_1k.hdr",
-      "license": "CC0 — Poly Haven",
-      "use": "Boss-wave 'blood moon' environment lighting"
-    },
-    {
       "src": "three:textures/equirectangular/quarry_01_1k.hdr",
       "dst": "assets/hdri/overcast_1k.hdr",
       "license": "CC0 — Poly Haven",
       "use": "Menu / high-key preview lighting"
+    },
+    {
+      "src": "three:textures/equirectangular/pedestrian_overpass_1k.hdr",
+      "dst": "assets/hdri/day_1k.hdr",
+      "license": "CC0 — Poly Haven (via the three.js example asset pool)",
+      "use": "Daylight image-based lighting. An overcast urban street rather than open sky: the arena is a walled precinct, so its ambient should come off brick and asphalt."
     },
     {
       "src": "three:textures/brick_diffuse.jpg",
@@ -167,12 +161,6 @@
       "dst": "assets/textures/ember.jpg",
       "license": "MIT (three.js)",
       "use": "Burning barrel / flamethrower emissive ramp"
-    },
-    {
-      "src": "three:textures/planets/moon_1024.jpg",
-      "dst": "assets/textures/moon.jpg",
-      "license": "MIT (three.js)",
-      "use": "Moon billboard in the night sky"
     },
     {
       "src": "three:textures/decal/decal-diffuse.png",

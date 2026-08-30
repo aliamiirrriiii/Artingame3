@@ -216,10 +216,10 @@ export class Level {
     // Ground-floor plinth.
     this.box('concrete', x, 0, z, w + 0.3, 0.9, d + 0.3, { tag: 'wall' });
 
-    // Windows. Most are dark; a handful still have power, and those are the
-    // only warm colour in the palette, so they read as landmarks.
+    // Windows. In daylight every one of them is a dark reflective pane: what
+    // you see in the glass is the sky and the building opposite, which is what
+    // sells a street as somewhere with depth behind its facades.
     const floors = Math.max(1, Math.floor((h - 2.5) / 3.2));
-    const glassBatch = this._batch('windowLit');
     const darkBatch = this._batch('windowDark');
 
     for (let f = 0; f < floors; f++) {
@@ -247,15 +247,12 @@ export class Level {
             const g = new THREE.PlaneGeometry(1.5, 1.9);
             g.rotateY(Math.atan2(nx, nz));
             g.translate(px, wy, pz);
-            (r.next() < 0.18 ? glassBatch : darkBatch).push(g);
+            darkBatch.push(g);
           }
 
-          if (r.next() < 0.18) {
-            this.fixtures.push({
-              pos: new THREE.Vector3(px + nx * 0.4, wy, pz + nz * 0.4),
-              color: 0xffb066, intensity: 10, range: 11, flicker: 0.15, kind: 'window',
-            });
-          }
+          // Lit windows were the warm landmarks of the night version. In
+          // daylight nothing behind that glass could out-shine the sky, so
+          // they are simply windows now.
         }
       }
     }
@@ -342,10 +339,11 @@ export class Level {
       targetHeight: 6.6,
       markers: { bulb: 'LanternPole_Lantern' },
       material: (mat) => {
-        // Authored for daylight product shots; lift the emissive so the glass
-        // reads as a lit lamp at night.
-        mat.emissiveIntensity = 2.6;
-        mat.envMapIntensity = 0.8;
+        // The street lights are off: it is the middle of the afternoon, and a
+        // lamp glowing in daylight is the sort of detail that makes a scene
+        // read as a game rather than a place.
+        mat.emissiveIntensity = 0.0;
+        mat.envMapIntensity = 1.0;
         return null;
       },
     });
@@ -362,11 +360,8 @@ export class Level {
       if (lamp) this.props.markerWorld(lamp, 'bulb', place, bulb);
       else bulb.set(lx + Math.cos(rot) * 1.7, 5.7, lz + Math.sin(rot) * 1.7);
 
-      this.fixtures.push({
-        pos: bulb.clone(),
-        color: 0xffd9a0, intensity: 50, range: 24, flicker: r.next() < 0.35 ? 0.5 : 0.06,
-        kind: 'street',
-      });
+      // No fixture: an unlit lamp emits nothing, and the point-light budget is
+      // better spent on the fires, which are the only real light sources left.
     }
     if (lamp) this.props.place(lamp, lampPlacements, { name: 'lantern' });
 
@@ -417,7 +412,10 @@ export class Level {
       for (let i = 0; i < seg; i++) {
         const t = (i - (seg - 1) / 2) * 2.4;
         const px = fx + Math.cos(rot) * t, pz = fz + Math.sin(rot) * t;
-        this.cylinder('steel', px, 0, pz, 0.05, 0.05, 2.1, { seg: 6 });
+        // Twelve sides, not six: at six a 50 mm post has 25 mm flat faces, and
+        // one of them catching the sun square-on lights the whole post up like
+        // a strip light. More sides make the highlight narrow instead.
+        this.cylinder('steel', px, 0, pz, 0.05, 0.05, 2.1, { seg: 12 });
         this.box('steel', px, 2.05, pz, 2.4, 0.06, 0.06, { rotY: rot, collide: false });
       }
       this.collision.add(new Box(fx, 0, fz, len / 2, 0.12, 2.1, rot, 'cover'));
@@ -673,7 +671,11 @@ export class Level {
     const tex = radialFalloffTexture(128, 3.0);
 
     const geos = [];
-    const WEIGHT = { street: 1.0, fire: 1.15, perk: 0.5, buy: 0.4, window: 0 };
+    // Weighted right down from the night build: an additive disc on the ground
+    // was how a lamp announced itself across a dark street, and in sunlight the
+    // same disc is a white sheet. Only the fires and the stations keep one, and
+    // only enough to say "something is glowing here".
+    const WEIGHT = { street: 0, fire: 0.22, perk: 0, buy: 0, window: 0 };
 
     for (const f of this.fixtures) {
       const w = WEIGHT[f.kind] ?? 0;
@@ -725,21 +727,18 @@ export class Level {
   }
 
   _finalize() {
-    // Two extra materials that only exist for windows.
-    const litMat = new THREE.MeshStandardMaterial({
-      color: 0x1a1408, emissive: 0xffb066, emissiveIntensity: 1.15,
-      roughness: 0.35, metalness: 0, side: THREE.DoubleSide,
-    });
+    // One extra material that only exists for windows: a dark, near-smooth
+    // pane that is almost entirely what it reflects. Under a sky this is what
+    // gives a flat facade its depth.
     const darkMat = new THREE.MeshStandardMaterial({
-      color: 0x0a0d12, roughness: 0.12, metalness: 0.35,
-      envMapIntensity: 2.0, side: THREE.DoubleSide,
+      color: 0x0b0e13, roughness: 0.09, metalness: 0.40,
+      envMapIntensity: 2.6, side: THREE.DoubleSide,
     });
 
     for (const [key, geos] of this.batches) {
       if (!geos.length) continue;
       let material;
-      if (key === 'windowLit') material = litMat;
-      else if (key === 'windowDark') material = darkMat;
+      if (key === 'windowDark') material = darkMat;
       else material = this.mats.get(key);
       if (!material) continue;
 
@@ -750,7 +749,7 @@ export class Level {
       const mesh = new THREE.Mesh(merged, material);
       mesh.name = `level:${key}`;
       mesh.castShadow = key !== 'asphalt' && key !== 'wetAsphalt' && key !== 'dirt'
-        && key !== 'windowLit' && key !== 'windowDark' && key !== 'tile';
+        && key !== 'windowDark' && key !== 'tile';
       mesh.receiveShadow = true;
       mesh.matrixAutoUpdate = false;
       mesh.updateMatrix();
@@ -833,7 +832,10 @@ export class Level {
         flick = 1 - f.flicker * (0.5 + 0.5 * Math.sin(t)) * (0.6 + 0.4 * Math.sin(t * 2.37));
         if (f.flicker > 0.4 && Math.sin(t * 0.71 + slot.phase) > 0.985) flick *= 0.15;
       }
-      l.intensity = f.intensity * flick;
+      // Daylight scale. These intensities were tuned as the only light in a
+      // dark street; against a sun they only have to say "this machine has
+      // power". Fires keep most of theirs — a fire is genuinely bright.
+      l.intensity = f.intensity * flick * (f.kind === 'fire' ? 0.55 : 0.20);
     }
   }
 

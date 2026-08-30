@@ -1,7 +1,11 @@
 # NIGHT OF THE RISEN
 
 A wave-survival zombie shooter that runs in the browser on WebGL2 — physically
-based night rendering, a flow-field horde, and a twelve-weapon arsenal.
+based daylight rendering, a flow-field horde, and a twelve-weapon arsenal.
+
+It is set in the middle of an afternoon, which is the harder lighting to hold a
+horror tone in and the more honest one to render: at night almost everything is
+hidden, and a scene that only works in the dark is a scene that does not work.
 
 ![Holding the plaza at Precinct 13](docs/screenshot-wave.png)
 
@@ -159,9 +163,8 @@ so no two read the same. They flash white when hit and **dissolve** along a
 noise threshold with a hot rim when they die, rather than blinking out.
 
 Each one has a pair of additive eye quads billboarded from the head bone, drawn
-for the entire horde in one instanced call. In a level this dark, a pair of
-points coming at you out of an alley does more work than any amount of texture
-detail.
+for the entire horde in one instanced call — they read as wet highlights in
+daylight and as points in an alley in shadow, for one draw call either way.
 
 ## Controls
 
@@ -211,10 +214,10 @@ demo scene with a 19.7 m ground plane, a camera and a light), bakes each mesh's
 transform into its geometry, normalises the result to a real-world height with
 its base on the ground, and hands the materials to a per-asset tweak — because
 these are authored for daylight product viewers. The cone's retroreflective
-orange read as a glowing plastic toy under moonlight until its albedo was
-knocked down; the window frame arrived showroom white and had to be made
-filthy; the window glass had its `KHR_materials_transmission` stripped, since
-transmission needs its own render pass and at night the difference is invisible.
+orange had its albedo knocked down; the window frame arrived showroom white and
+had to be made filthy; the window glass had its `KHR_materials_transmission`
+stripped, since transmission needs its own render pass and at this size the
+difference is not worth one.
 
 The lamp's light is placed at the lantern's **own bulb**, read out of the model
 as a marker node, rather than guessed from an offset.
@@ -239,14 +242,16 @@ count will not tell you:
 Downloaded assets are combined and extended at load time rather than used raw:
 
 - Height maps that shipped without normal maps are **Sobel-filtered into real
-  tangent-space normal maps** on load, so brick and wood catch the flashlight
-  with actual relief.
+  tangent-space normal maps** on load, so brick and wood catch a low sun with
+  actual relief.
 - Large tiled surfaces get a **world-space detail breakup** injected into their
   shader — one extra texture fetch at a different scale, modulating albedo and
   roughness, which destroys the visible repetition of a 1k texture stretched
   across a 90 m street.
-- The night sky, the light-pool falloff and every sound effect are generated at
-  runtime.
+- The sky — gradient, sun disc, glare and a drifting three-octave cloud layer —
+  the light-pool falloff and every sound effect are generated at runtime. The
+  HDRI is used for image-based lighting only: as a backdrop it puts a photograph
+  of somewhere else behind the arena and hands the bloom pass a hotspot.
 
 **All audio is synthesised** with the Web Audio API — layered gunshots whose
 body, crack and tail come from the weapon definition, formant-filtered zombie
@@ -378,7 +383,7 @@ android/     Gradle project: WebView shell, manifest, resources, icon
 src/
   core/      util, quality tiers + adaptive scaler, input, touch input,
              asset loader, audio synth
-  render/    renderer + post chain, night sky, final grade, particles/decals/gore
+  render/    renderer + post chain, day sky, final grade, particles/decals/gore
   world/     PBR material library, arena generator, collision + flow-field nav
   entities/  player controller, zombie manager, archetype table
   weapons/   arsenal data, the gunsmith, viewmodel rig, combat resolution

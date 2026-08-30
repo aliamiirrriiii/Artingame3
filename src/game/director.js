@@ -173,16 +173,17 @@ export class Director {
       );
     }
 
-    // Boss waves recolour the whole scene.
+    // Boss waves recolour the whole scene: the light goes coppery and the
+    // haze thickens, as if something upwind is burning.
     if (this.isBossWave(this.wave)) {
       this.stage.setMood({
-        fog: 0x2a1014, fogDensity: this.stage.preset.fogDensity * 1.15,
-        moonColor: 0xff8866, moonIntensity: 1.5, exposure: 1.0,
+        fog: 0x9c7a6c, fogDensity: this.stage.preset.fogDensity * 1.35,
+        sunColor: 0xffb488, sunIntensity: 1.5, exposure: 0.68,
       });
     } else {
       this.stage.setMood({
-        fog: 0x111823, fogDensity: this.stage.preset.fogDensity,
-        moonColor: 0xa8c6ff, moonIntensity: 1.9, exposure: 1.05,
+        fog: 0xb9c6d4, fogDensity: this.stage.preset.fogDensity,
+        sunColor: 0xfff8ee, sunIntensity: 2.05, exposure: 0.75,
       });
     }
   }

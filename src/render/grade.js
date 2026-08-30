@@ -14,9 +14,9 @@ export const GradeShader = {
     uTime:           { value: 0 },
     uResolution:     { value: [1280, 720] },
 
-    uVignette:       { value: 1.05 },   // strength
-    uGrain:          { value: 0.055 },
-    uAberration:     { value: 0.0006 },
+    uVignette:       { value: 0.72 },   // strength
+    uGrain:          { value: 0.038 },
+    uAberration:     { value: 0.0005 },
 
     uDamage:         { value: 0.0 },    // 0..1 red flash on taking a hit
     uHealth:         { value: 1.0 },    // 1 = fine, 0 = about to die
@@ -24,10 +24,13 @@ export const GradeShader = {
     uFreeze:         { value: 0.0 },    // freeze power-up tint
     uFlash:          { value: 0.0 },    // explosion / nuke whiteout
 
-    uLift:           { value: [0.012, 0.014, 0.024] },
-    uGain:           { value: [1.02, 1.00, 1.06] },
-    uSaturation:     { value: 0.92 },
-    uContrast:       { value: 1.08 },
+    // Daylight grade: a bleached, slightly warm print. The night version
+    // lifted the blacks into blue and pulled saturation down hard; under a sun
+    // that reads as a filter over the lens rather than as the light itself.
+    uLift:           { value: [0.010, 0.010, 0.012] },
+    uGain:           { value: [1.05, 1.01, 0.97] },
+    uSaturation:     { value: 0.88 },
+    uContrast:       { value: 1.12 },
   },
 
   vertexShader: /* glsl */`

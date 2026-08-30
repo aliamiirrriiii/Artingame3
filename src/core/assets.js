@@ -221,7 +221,6 @@ export const MANIFEST = {
     { key: 'wetNormal', url: 'assets/textures/wet_normal.jpg' },
     { key: 'grassAlbedo', url: 'assets/textures/grass_albedo.jpg', srgb: true },
     { key: 'ember', url: 'assets/textures/ember.jpg', srgb: true },
-    { key: 'moon', url: 'assets/textures/moon.jpg', srgb: true },
     { key: 'decalAlbedo', url: 'assets/textures/decal_albedo.png', srgb: true },
     { key: 'decalNormal', url: 'assets/textures/decal_normal.jpg' },
     { key: 'spark', url: 'assets/textures/spark.png', srgb: true },
@@ -237,8 +236,7 @@ export const MANIFEST = {
     { key: 'trafficCone', url: 'assets/models/trafficcone/TrafficCone.gltf' },
   ],
   hdri: [
-    { key: 'night', url: 'assets/hdri/moonless_night_1k.hdr' },
-    { key: 'dusk', url: 'assets/hdri/blood_dusk_1k.hdr' },
+    { key: 'day', url: 'assets/hdri/day_1k.hdr' },
   ],
   buffers: [
     { key: 'ambience', url: 'assets/sounds/ambience.ogg' },

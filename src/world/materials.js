@@ -123,7 +123,7 @@ export class MaterialLibrary {
     }), { scale: 22, albedo: 0.5, rough: 0.16, tint: 0x9a9aa0 }));
 
     // Wet asphalt for the puddle ring around drains — same base, glossier, with
-    // a scrolling water normal that catches the moon and the muzzle flashes.
+    // a scrolling water normal that catches the sun and the muzzle flashes.
     this.set('wetAsphalt', this.breakup(this._std({
       normalMap: rep(a.tex('wetNormal'), 1, 1),
       normalScale: new THREE.Vector2(0.10, 0.10),
@@ -212,12 +212,14 @@ export class MaterialLibrary {
 
     // ---------------------------------------------------------------- metals
 
+    // Weathered street steel, not a mirror: under an open sky a low-roughness
+    // metal reflects the whole hemisphere and reads as a chrome rod.
     this.set('steel', this._std({
-      color: 0x9099a3,
-      roughness: 0.36,
-      metalness: 1.0,
+      color: 0x767c84,
+      roughness: 0.82,
+      metalness: 0.55,
       roughnessMap: rep(a.tex('roughDetail'), 1, 1),
-      envMapIntensity: 1.5,
+      envMapIntensity: 1.0,
     }));
 
     this.set('rust', this.breakup(this._std({
@@ -253,7 +255,7 @@ export class MaterialLibrary {
     }));
 
     this.set('chrome', this._std({
-      color: 0xdfe6ef, roughness: 0.09, metalness: 1.0, envMapIntensity: 2.2,
+      color: 0xc9d2dc, roughness: 0.15, metalness: 1.0, envMapIntensity: 1.4,
     }));
 
     // -------------------------------------------------------- weapon finishes
@@ -273,7 +275,7 @@ export class MaterialLibrary {
      * detail every 25 mm.
      */
     const gunN = a.normalFromHeight('roughDetail', 'gunGrainNormal', 0.7);
-    const gun = (o) => this._std({ vertexColors: true, envMapIntensity: 1.9, ...o });
+    const gun = (o) => this._std({ vertexColors: true, envMapIntensity: 0.95, ...o });
 
     // Parkerised receiver steel: matte, slightly warm, the default for frames.
     this.set('gunSteel', gun({
@@ -286,7 +288,7 @@ export class MaterialLibrary {
     this.set('gunBlued', gun({
       color: 0x24282c, roughness: 0.24, metalness: 1.0,
       normalMap: rep(gunN, 55, 55), normalScale: new THREE.Vector2(0.28, 0.28),
-      envMapIntensity: 2.2,
+      envMapIntensity: 1.10,
     }));
 
     // Hard-anodised aluminium: receivers, rails, optic bodies.
@@ -312,7 +314,7 @@ export class MaterialLibrary {
     }));
 
     this.set('gunBrass', gun({
-      color: 0xc9973b, roughness: 0.28, metalness: 1.0, envMapIntensity: 2.0,
+      color: 0xc9973b, roughness: 0.30, metalness: 1.0, envMapIntensity: 1.3,
     }));
 
     // Optic glass. Not transmissive — a viewmodel lens only ever has to look
@@ -320,7 +322,7 @@ export class MaterialLibrary {
     this.set('gunGlass', new THREE.MeshPhysicalMaterial({
       color: 0x0a1418, roughness: 0.06, metalness: 0.0,
       clearcoat: 1.0, clearcoatRoughness: 0.03,
-      reflectivity: 0.9, envMapIntensity: 2.6,
+      reflectivity: 0.9, envMapIntensity: 1.6,
       vertexColors: true,
     }));
 

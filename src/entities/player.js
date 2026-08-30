@@ -68,7 +68,10 @@ export class Player {
     this.fovBase = 75;
     this.fovCurrent = 75;
 
-    this.flashlightOn = true;
+    // Off by default now that it is daylight: a spotlight at head height blows
+    // out anything metal within a couple of metres, and in an afternoon street
+    // it buys nothing. It still earns its keep inside the blocks, on F.
+    this.flashlightOn = false;
 
     // ---------------------------------------------------------- feedback
     this.damageFlash = 0;

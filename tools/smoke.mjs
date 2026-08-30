@@ -33,6 +33,12 @@ const browser = await chromium.launch({
   ...(execPath ? { executablePath: execPath } : {}),
   args: [
     '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader',
+    // Without these, headless Chromium treats the page as backgrounded and
+    // throttles requestAnimationFrame to a few frames per minute. The run
+    // then reports a plausible frame time from three frames and a game that
+    // never advanced far enough to spawn anything.
+    '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows',
+    '--disable-background-timer-throttling',
     '--disable-gpu-sandbox', '--no-sandbox', '--ignore-gpu-blocklist',
   ],
 });

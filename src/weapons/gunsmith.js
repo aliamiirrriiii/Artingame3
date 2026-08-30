@@ -262,9 +262,9 @@ export function wear(geo, opts = {}) {
  * scuffs; glass and emissive parts do not wear at all.
  */
 const WEAR = {
-  gunSteel: { amount: 0.50, grime: 0.30 },
-  gunBlued: { amount: 0.60, grime: 0.22 },
-  gunAlloy: { amount: 0.40, grime: 0.28 },
+  gunSteel: { amount: 0.34, grime: 0.30 },
+  gunBlued: { amount: 0.40, grime: 0.22 },
+  gunAlloy: { amount: 0.28, grime: 0.28 },
   gunGrip:  { amount: 0.16, grime: 0.34 },
   gunWood:  { amount: 0.26, grime: 0.30 },
   gunBrass: { amount: 0.35, grime: 0.18 },

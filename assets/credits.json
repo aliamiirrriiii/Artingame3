@@ -37,9 +37,13 @@
     {
       "license": "CC0 — Poly Haven",
       "files": [
-        "hdri/blood_dusk_1k.hdr",
-        "hdri/moonless_night_1k.hdr",
         "hdri/overcast_1k.hdr"
+      ]
+    },
+    {
+      "license": "CC0 — Poly Haven (via the three.js example asset pool)",
+      "files": [
+        "hdri/day_1k.hdr"
       ]
     },
     {
@@ -64,7 +68,6 @@
         "textures/ember.jpg",
         "textures/grass_albedo.jpg",
         "textures/grunge.jpg",
-        "textures/moon.jpg",
         "textures/perlin.png",
         "textures/rough_detail.jpg",
         "textures/soft_circle.png",

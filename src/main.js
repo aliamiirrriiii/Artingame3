@@ -6,7 +6,7 @@ import { TouchInput, isTouchDevice } from './core/touch.js';
 import { audio } from './core/audio.js';
 import { clamp, damp, fmt, rand, RollingAverage } from './core/util.js';
 import { Stage } from './render/stage.js';
-import { NightSky } from './render/sky.js';
+import { Sky } from './render/sky.js';
 import { Effects } from './render/fx.js';
 import { MaterialLibrary } from './world/materials.js';
 import { Level } from './world/level.js';
@@ -144,16 +144,23 @@ class Game {
       loadFill.style.width = '95%';
       await nextFrame();
 
-      const env = this.assets.environment('night');
-      this.stage.applyEnvironment(env, { intensity: 0.7, fog: 0x111823 });
-      this.sky = new NightSky(this.stage.scene);
+      const env = this.assets.environment('day');
+      this.stage.applyEnvironment(env, { intensity: 0.85, fog: 0xb9c6d4 });
+      this.sky = new Sky(this.stage.scene);
+      this.sky.setQuality(this.preset);
       this.sky.matchFog(this.stage.fogColor);
-      this.sky.alignToLight(this.stage.moon);
+      this.sky.alignToLight(this.stage.sun);
+      // A mood change (a boss wave, a power-up) retints the scene fog; the sky
+      // haze and the particle fog have to follow it or the horizon splits.
+      this.stage.onMood = (stage) => {
+        this.sky.matchFog(stage.fogColor);
+        this.effects?.setFog(stage.fogColor, stage.scene.fog.density);
+      };
 
       this.materials = new MaterialLibrary(this.assets);
       this.level = new Level(this.stage.scene, this.materials, this.assets, this.preset).build();
       this.effects = new Effects(this.stage.scene, this.assets, this.preset);
-      this.effects.setFog(this.stage.fogColor, this.preset.fogDensity);
+      this.effects.setFog(this.stage.fogColor, this.stage.fogDensity);
       this.effects.setViewportHeight(window.innerHeight);
 
       loadText.textContent = 'Waking the dead';
@@ -619,8 +626,9 @@ class Game {
     this.zombies.preset = this.preset;
     this.zombies.setMaxAlive(this.preset.maxZombies);
     this.zombies.prewarm(this.preset.maxZombies);
-    this.effects.setFog(this.stage.fogColor, this.preset.fogDensity);
+    this.effects.setFog(this.stage.fogColor, this.stage.fogDensity);
     this.sky.matchFog(this.stage.fogColor);
+    this.sky.setQuality(this.preset);
     this._applySettings();
     // The composer (and with it the grade pass) was rebuilt, so re-apply any
     // power-up tint that was live when the quality changed.

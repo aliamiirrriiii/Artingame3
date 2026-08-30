@@ -15,7 +15,7 @@ import { Stage } from '../src/render/stage.js';
 import { AssetManager, MANIFEST } from '../src/core/assets.js';
 import { MaterialLibrary } from '../src/world/materials.js';
 import { Level } from '../src/world/level.js';
-import { NightSky } from '../src/render/sky.js';
+import { Sky } from '../src/render/sky.js';
 import { PRESETS } from '../src/core/quality.js';
 
 const report = { errors: [], steps: [] };
@@ -44,11 +44,11 @@ const step = (s) => { report.steps.push(s); };
     };
     step('assets');
 
-    const env = assets.environment('night');
-    stage.applyEnvironment(env, { intensity: 0.7, fog: 0x111823 });
-    const sky = new NightSky(stage.scene);
+    const env = assets.environment('day');
+    stage.applyEnvironment(env, { intensity: 0.7, fog: 0xb9c6d4 });
+    const sky = new Sky(stage.scene);
     sky.matchFog(stage.fogColor);
-    sky.alignToLight(stage.moon);
+    sky.alignToLight(stage.sun);
     step('env');
 
     const mats = new MaterialLibrary(assets);
@@ -117,7 +117,7 @@ const step = (s) => { report.steps.push(s); };
       { p: [1.8, 1.5, -14.2], t: [0, 0.4, -17], fl: true },     // 6 cones
       { ...OV, fl: false },                                 // 4 no flashlight
       { ...OV, pools: false },                              // 5 no light pools
-      { ...OV, moon: false },                               // 6 no moon
+      { ...OV, sun: false },                                // 6 no sun
       { ...OV, hemi: false },                               // 7 no hemisphere
       { ...OV, env: false },                                // 8 no IBL
       { ...OV, points: false },                             // 9 no point lights
@@ -127,9 +127,9 @@ const step = (s) => { report.steps.push(s); };
     const loop = () => {
       const v = views[vi];
       if (level.lightPoolMesh) level.lightPoolMesh.visible = v.pools !== false;
-      stage.moon.visible = v.moon !== false;
+      stage.sun.visible = v.sun !== false;
       stage.hemi.visible = v.hemi !== false;
-      stage.scene.environmentIntensity = v.env === false ? 0 : 0.7;
+      stage.scene.environmentIntensity = v.env === false ? 0 : 0.85;
       for (const e of level._lightPool) e.light.intensity = v.points === false ? 0 : e.light.intensity;
       if (v.points === false) for (const e of level._lightPool) e.light.visible = false;
       stage.camera.position.set(...v.p);
