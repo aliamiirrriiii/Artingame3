@@ -225,14 +225,30 @@ NOTR_KEY_PASSWORD=…
 …then `./gradlew assembleRelease`. Without those properties the release task
 still runs and produces an unsigned APK you can sign yourself with `apksigner`.
 
-> **Why the APK is not committed here.** The Android Gradle Plugin is published
-> only on Google's Maven repository, and both `dl.google.com` and
-> `maven.google.com` are blocked by egress policy in the environment this was
-> authored in — so is the Android SDK download. Everything that does not need
-> them is done and verified: the Android project, the manifest, the activity,
-> the resources, the Gradle wrapper, and the touch build of the game. What is
-> left is the compile step itself, which is one command anywhere the SDK is
-> reachable, or one push for CI.
+### Is it actually built?
+
+Yes — by CI, on every push. The most recent run produced:
+
+| | |
+|---|---|
+| `app-debug.apk` | 21.7 MB · 375 entries · installable as-is |
+| `app-release-unsigned.apk` | 22 MB · passes `lintVital` |
+| Bundle check | **29/29 manifest assets present**, 13/13 engine modules, 329 bundled game files |
+
+The bundle check is not a formality. The failure that matters for a WebView
+game is an APK that builds, installs and launches to a black screen because one
+asset never made it in — a green build says nothing about that. So
+`tools/verify-apk.mjs` opens the APK and looks for every entry in the asset
+manifest by name, plus the engine modules and the Android bits, and fails a
+bundle that is implausibly small. It was checked in both directions against
+synthetic fixtures before being trusted.
+
+> **Why the APK is not built in the authoring sandbox.** The Android Gradle
+> Plugin is published only on Google's Maven repository, and `dl.google.com`
+> and `maven.google.com` are both blocked by egress policy there, as is the SDK
+> download. Everything not needing them was verified locally — XML validated,
+> Java syntax checked, Gradle scripts parsed to the point of plugin resolution —
+> and the compile itself happens on CI, which has the SDK and the network.
 
 ### What the shell does
 
