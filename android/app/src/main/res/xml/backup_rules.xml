@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Only the WebView's localStorage matters: settings and the best run. -->
+<!--
+  What is worth backing up is the WebView's storage, which is where the game
+  keeps its settings and your best run. It lives in app_webview/ under the app
+  data root; the GPU shader caches inside it are large, machine-specific and
+  regenerate on first launch, so they are excluded.
+-->
 <full-backup-content>
-    <include domain="database" path="." />
-    <exclude domain="cache" path="." />
+    <include domain="root" path="app_webview" />
+    <exclude domain="root" path="app_webview/GPUCache" />
+    <exclude domain="root" path="app_webview/Default/GPUCache" />
+    <exclude domain="root" path="app_webview/Default/Service Worker" />
 </full-backup-content>

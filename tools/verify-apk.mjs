@@ -54,7 +54,8 @@ console.log(`  ${signed ? 'ok  ' : 'note'}    signature block ${signed ? 'presen
 
 console.log('\ngame code');
 const W = 'assets/www/';
-for (const f of [
+let codeOk = 0;
+const CODE = [
   'index.html',
   'src/main.js',
   'src/core/touch.js',
@@ -68,7 +69,9 @@ for (const f of [
   'vendor/three/examples/jsm/loaders/GLTFLoader.js',
   'vendor/three/examples/jsm/postprocessing/EffectComposer.js',
   'vendor/three/examples/jsm/utils/SkeletonUtils.js',
-]) need(W + f);
+];
+for (const f of CODE) if (need(W + f)) codeOk++;
+console.log(`  ${codeOk}/${CODE.length} present`);
 
 console.log('\ndownloaded assets (every entry in the manifest)');
 const manifest = JSON.parse(readFileSync(resolve(root, 'tools/assets.manifest.json'), 'utf8'));

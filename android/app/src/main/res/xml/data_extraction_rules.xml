@@ -1,9 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+ equivalent of backup_rules.xml. Same reasoning. -->
 <data-extraction-rules>
     <cloud-backup>
-        <exclude domain="cache" path="." />
+        <include domain="root" path="app_webview" />
+        <exclude domain="root" path="app_webview/GPUCache" />
+        <exclude domain="root" path="app_webview/Default/GPUCache" />
+        <exclude domain="root" path="app_webview/Default/Service Worker" />
     </cloud-backup>
     <device-transfer>
-        <exclude domain="cache" path="." />
+        <include domain="root" path="app_webview" />
+        <exclude domain="root" path="app_webview/GPUCache" />
+        <exclude domain="root" path="app_webview/Default/GPUCache" />
     </device-transfer>
 </data-extraction-rules>

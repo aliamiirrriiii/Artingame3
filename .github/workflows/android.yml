@@ -64,17 +64,18 @@ jobs:
 
       - name: Assemble release APK
         working-directory: android
-        # Unsigned unless keystore secrets are configured; still useful for size
-        # checks and for signing later with apksigner.
+        # Unsigned unless keystore properties are configured. Not allowed to
+        # fail silently: assembleRelease also runs lintVital, which is where a
+        # genuinely broken manifest or backup rule shows up.
         run: ./gradlew --no-daemon assembleRelease
-        continue-on-error: true
 
       - name: Verify APK contents
         # Guards against the quiet failure: an APK that builds, installs and
         # launches to a black screen because an asset never made it in.
         run: |
-          APK=$(find android/app/build/outputs/apk/debug -name '*.apk' | head -1)
-          node tools/verify-apk.mjs "$APK"
+          for APK in $(find android/app/build/outputs/apk -name '*.apk' | sort); do
+            node tools/verify-apk.mjs "$APK"
+          done
 
       - name: Report APK size
         run: |
