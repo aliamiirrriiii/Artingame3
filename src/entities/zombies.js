@@ -3,6 +3,10 @@ import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { ARCHETYPES } from './zombieTypes.js';
 import { clamp, damp, dampAngle, lerp, rand, randInt, gauss, angleDelta, TAU } from '../core/util.js';
 import { audio } from '../core/audio.js';
+import {
+  HITBOX_DEFS, SEVERED_SCALE,
+  intersectCapsule, intersectCylinder, intersectSphere, sphereOverlapsRay,
+} from './hitboxes.js';
 
 /**
  * The horde.
@@ -23,8 +27,9 @@ import { audio } from '../core/audio.js';
  *    casting shadows. Skinning is the single most expensive thing in the frame,
  *    so this is where the budget is won.
  *
- *  - Hit detection is analytic (capsule body + head sphere). No mesh raycasts,
- *    no BVH, and headshots stay accurate while the model is mid-animation.
+ *  - Hit detection is analytic: eleven capsules strung between the animated
+ *    bones. No mesh raycasts and no BVH, but the boxes hunch, lurch and swing
+ *    with the pose layer, so a headshot has to actually be on the head.
  */
 
 const BODY_RADIUS = 0.38;
@@ -57,13 +62,15 @@ export class ZombieManager {
     this.maxAlive = preset.maxZombies;
 
     this.onPlayerHit = null;      // (damage, zombie) => void
-    this.onKill = null;           // (zombie, byPlayer) => void
+    this.onKill = null;           // (zombie, byPlayer, { crit, part, popped }) => void
+    this.onDismember = null;      // (zombie, boneName) => void
     this.onSpit = null;           // (origin, dir, spec) => void
     this.onScream = null;         // (zombie) => void
 
     this._flowDir = { x: 0, z: 0 };
     this._tmp = new THREE.Vector3();
     this._tmp2 = new THREE.Vector3();
+    this._frameId = 0;
     this._q = new THREE.Quaternion();
     this._e = new THREE.Euler();
 
@@ -146,7 +153,12 @@ export class ZombieManager {
     const meshes = [];
 
     root.traverse((o) => {
-      if (o.isBone) {
+      // Anything on the Mixamo rig, not just the skinning joints. The leaf
+      // markers — HeadTop_End, Toe_End, the eyes — are not listed in the GLTF
+      // skin, so GLTFLoader builds them as plain Object3D rather than Bone,
+      // and the head hitbox needs HeadTop_End to know which way the skull
+      // points.
+      if (o.isBone || /^mixamorig/.test(o.name)) {
         // GLTFLoader sanitises node names, so "mixamorig:LeftArm" arrives as
         // "mixamorigLeftArm". Accept either form.
         const n = o.name.replace(/^mixamorig[:_]?/, '');
@@ -197,6 +209,12 @@ export class ZombieManager {
       spawnT: 0, addTimer: 0,
       currentClip: null,
       damageTaken: 0,
+      // Skeletal hit volumes, rebuilt at most once per frame and only for
+      // zombies a ray actually reaches.
+      hitboxes: HITBOX_DEFS.map(() => ({ a: new THREE.Vector3(), b: new THREE.Vector3(), r: 0, ok: false })),
+      hbFrame: -1,
+      severed: new Set(),
+      limbDamage: new Map(),
     };
   }
 
@@ -369,6 +387,12 @@ export class ZombieManager {
     z.addTimer = spec.spawnsAdds ? spec.spawnsAdds.every : 0;
     z.lodLevel = 0;
     z.animAccum = 0;
+    z.hbFrame = -1;
+    // A recycled zombie may still be carrying the collapsed bones of the last
+    // one's amputations.
+    for (const name of z.severed) { const b = z.bones[name]; if (b) b.scale.setScalar(1); }
+    z.severed.clear();
+    z.limbDamage.clear();
 
     const finalScale = (spec.heightM / this._modelHeight) * z.sizeVar;
     z.root.scale.setScalar(finalScale);
@@ -431,7 +455,7 @@ export class ZombieManager {
    * Applies damage. Returns an outcome the weapon layer uses for hit markers,
    * points and audio.
    */
-  damage(z, amount, hitPoint, dir, { crit = false, stagger = 0, byPlayer = true } = {}) {
+  damage(z, amount, hitPoint, dir, { crit = false, stagger = 0, byPlayer = true, part = 'chest' } = {}) {
     if (!z.active || z.state === 'dead' || z.state === 'dying') return null;
 
     z.health -= amount;
@@ -439,8 +463,22 @@ export class ZombieManager {
     z.hitFlash = Math.min(1, z.hitFlash + (crit ? 0.9 : 0.5));
 
     const power = clamp(amount / 120, 0.35, 2.4) * z.spec.gore;
-    this.fx.bloodBurst(hitPoint, dir, power, crit);
+    this.fx.bloodBurst(hitPoint, dir, power * (crit ? 1.7 : 1), crit);
     audio.flesh(hitPoint, crit);
+
+    // Spray onto whatever is standing behind them. Short ray, so it only fires
+    // when there is actually a wall to paint.
+    if (byPlayer && power > 0.7) this._backSplatter(hitPoint, dir, power);
+
+    // Limbs come off before the body does. Accumulated rather than
+    // single-shot so a magazine emptied into one arm takes it off, which is
+    // what a player who keeps shooting an arm is asking for.
+    const limb = part === 'arm' || part === 'leg' ? this._limbBone(z, hitPoint) : null;
+    if (limb && byPlayer && z.spec.gore > 0.3) {
+      const taken = (z.limbDamage.get(limb) || 0) + amount;
+      z.limbDamage.set(limb, taken);
+      if (taken > z.maxHealth * 0.30 + 12 && part === 'arm') this._sever(z, limb, dir, 1);
+    }
 
     // Stagger, resisted by mass. Brutes and bosses barely flinch.
     const st = stagger * (1 - z.spec.staggerResist);
@@ -456,13 +494,65 @@ export class ZombieManager {
     z.vel.z += dir.z * push;
 
     if (z.health <= 0) {
-      this._kill(z, dir, crit, byPlayer);
-      return { killed: true, crit, points: Math.round(z.spec.points * (crit ? 1.5 : 1)) };
+      this._kill(z, dir, crit, byPlayer, part, amount, hitPoint);
+      return { killed: true, crit, part, points: Math.round(z.spec.points * (crit ? 1.5 : 1)) };
     }
-    return { killed: false, crit, points: Math.round(amount * 0.1) };
+    return { killed: false, crit, part, points: Math.round(amount * 0.1) };
   }
 
-  _kill(z, dir, crit, byPlayer) {
+  /** Which limb bone a hit at `hitPoint` belongs to, by nearest capsule. */
+  _limbBone(z, hitPoint) {
+    let best = Infinity, name = null;
+    for (let i = 0; i < HITBOX_DEFS.length; i++) {
+      const def = HITBOX_DEFS[i];
+      if (!def.limb) continue;
+      const hb = z.hitboxes[i];
+      if (!hb.ok) continue;
+      const d = Math.min(hitPoint.distanceToSquared(hb.a), hitPoint.distanceToSquared(hb.b));
+      if (d < best) { best = d; name = def.limb; }
+    }
+    return name;
+  }
+
+  /**
+   * Takes a limb off. The bone collapses (see `SEVERED_SCALE`), and the joint
+   * it left behind throws meat and a jet of blood.
+   */
+  _sever(z, boneName, dir, force = 1) {
+    if (z.severed.has(boneName)) return;
+    const bone = z.bones[boneName];
+    if (!bone) return;
+    z.severed.add(boneName);
+    bone.scale.setScalar(SEVERED_SCALE);
+    z.hbFrame = -1;
+
+    bone.updateWorldMatrix(true, false);
+    const p = this._tmp.setFromMatrixPosition(bone.matrixWorld);
+    this.fx.bloodBurst(p, dir, 2.2 * force * z.spec.gore, true);
+    this.fx.bloodPool(p.x, p.z, rand(0.4, 0.8) * z.scale);
+    for (let i = 0; i < Math.round(5 * force * z.spec.gore); i++) {
+      this.fx.gibs.spawn(
+        p.x, p.y, p.z,
+        dir.x * rand(1.5, 5) + gauss() * 2.6,
+        rand(2.2, 6),
+        dir.z * rand(1.5, 5) + gauss() * 2.6,
+        rand(0.5, 1.2) * z.scale, rand(5, 9),
+      );
+    }
+    audio.flesh(p, true);
+    if (this.onDismember) this.onDismember(z, boneName);
+  }
+
+  /** Paints the surface behind a hit, if there is one within a couple of metres. */
+  _backSplatter(hitPoint, dir, power) {
+    const col = this.level?.collision;
+    if (!col?.raycast) return;
+    const hit = col.raycast(hitPoint, dir, 2.6, this._splatOut || (this._splatOut = {}));
+    if (!hit) return;
+    this.fx.bloodSplat(hit.point, hit.normal, clamp(0.5 + power * 0.55, 0.4, 1.9));
+  }
+
+  _kill(z, dir, crit, byPlayer, part = 'chest', amount = 0, hitPoint = null) {
     z.state = 'dying';
     z.stateT = 0;
     z.health = 0;
@@ -472,7 +562,7 @@ export class ZombieManager {
     z.vel.set(dir.x * 1.6, 0, dir.z * 1.6);
 
     // A death is loud and messy — this is the payoff for the whole loop.
-    const p = this._tmp.set(z.pos.x, z.pos.y + z.height * 0.55, z.pos.z);
+    const p = this._tmp2.set(z.pos.x, z.pos.y + z.height * 0.55, z.pos.z);
     this.fx.bloodBurst(p, dir, 2.0 * z.spec.gore, true);
     this.fx.bloodPool(z.pos.x, z.pos.z, rand(0.9, 1.6) * z.scale);
     for (let i = 0; i < Math.round(4 * z.spec.gore); i++) {
@@ -484,44 +574,114 @@ export class ZombieManager {
         rand(0.7, 1.5) * z.scale, rand(5, 9),
       );
     }
+
+    // The killing blow takes the part it landed on with it. Whether a head
+    // actually comes off is the difference between a kill that registers and
+    // one that just makes a number go up, so the bar is low: any headshot
+    // carrying more than a third of the body's health pops.
+    let popped = false;
+    if (byPlayer && z.spec.gore > 0.3 && !z.spec.boss) {
+      if (part === 'head' && amount > z.maxHealth * 0.34) {
+        this._sever(z, 'Head', dir, 1.6);
+        popped = true;
+      } else if (hitPoint && (part === 'arm' || part === 'leg')) {
+        const limb = this._limbBone(z, hitPoint);
+        if (limb && amount > z.maxHealth * 0.30) this._sever(z, limb, dir, 1.2);
+      }
+    }
+
     audio.growl(z.pos, z.spec.boss ? 'boss' : z.type, 0);
     audio.flesh(p, true);
 
-    if (this.onKill) this.onKill(z, byPlayer);
+    if (this.onKill) this.onKill(z, byPlayer, { crit, part, popped });
+  }
+
+  /**
+   * Rebuilds one zombie's capsule set from its current bone matrices.
+   *
+   * Guarded by a frame stamp: a shotgun fires eight pellets through this in a
+   * single frame, and the skeleton does not move between them.
+   */
+  _refreshHitboxes(z) {
+    if (z.hbFrame === this._frameId) return;
+    z.hbFrame = this._frameId;
+
+    // The renderer will do this again later in the frame; doing it here costs
+    // one extra pass over the bones of the few zombies actually being shot at.
+    z.root.updateMatrixWorld(true);
+
+    const girth = z.spec.boss ? 1.35 : 1;
+    for (let i = 0; i < HITBOX_DEFS.length; i++) {
+      const def = HITBOX_DEFS[i];
+      const hb = z.hitboxes[i];
+      const ba = z.bones[def.a], bb = z.bones[def.b];
+      if (!ba || !bb || (def.limb && z.severed.has(def.limb)) || z.severed.has(def.a)) {
+        hb.ok = false;
+        continue;
+      }
+      this._tmp.setFromMatrixPosition(ba.matrixWorld);
+      this._tmp2.setFromMatrixPosition(bb.matrixWorld);
+      hb.a.lerpVectors(this._tmp, this._tmp2, def.t0);
+      hb.b.lerpVectors(this._tmp, this._tmp2, def.t1);
+      hb.r = def.r * z.scale * girth;
+      hb.ok = true;
+    }
   }
 
   /**
    * Analytic hit test along a ray. Returns the closest zombie hit with the
-   * point, whether it was a headshot, and the distance.
+   * point, which body part took it, its damage multiplier, and the distance.
+   *
+   * `head` is kept on the result because the whole weapon layer keys crits,
+   * hit markers and audio off it.
    */
   raycast(origin, dir, maxDist, out = {}) {
-    let best = maxDist, hit = null, isHead = false, hy = 0;
+    let best = maxDist, hit = null, part = 'chest', mul = 1, index = -1;
 
     for (let i = 0; i < this.alive.length; i++) {
       const z = this.alive[i];
       if (z.state === 'dead' || z.state === 'dying') continue;
 
-      // Body: vertical capsule approximated as a cylinder + head sphere.
-      const bodyTop = z.pos.y + z.height * 0.88;
-      const bodyBot = z.pos.y + 0.1;
-      const t = intersectCylinder(origin, dir, z.pos.x, z.pos.z, z.radius, bodyBot, bodyTop, best);
-      let hitT = t;
-      let head = false;
+      // Broad phase: one sphere around the whole body. Generous enough to
+      // cover arms thrown forward mid-attack.
+      const bx = z.pos.x, by = z.pos.y + z.height * 0.5, bz = z.pos.z;
+      const br = z.height * 0.70 + 0.25;
+      if (!sphereOverlapsRay(origin, dir, bx, by, bz, br, best)) continue;
 
-      const headY = z.pos.y + z.height * 0.92;
-      const headR = 0.155 * z.scale * (z.spec.boss ? 1.6 : 1);
-      const ht = intersectSphere(origin, dir, z.pos.x, headY, z.pos.z, headR, best);
-      if (ht >= 0 && (hitT < 0 || ht < hitT)) { hitT = ht; head = true; }
+      this._refreshHitboxes(z);
 
-      if (hitT >= 0 && hitT < best) {
-        best = hitT; hit = z; isHead = head; hy = headY;
+      let anyBox = false;
+      for (let j = 0; j < z.hitboxes.length; j++) {
+        const hb = z.hitboxes[j];
+        if (!hb.ok) continue;
+        anyBox = true;
+        const t = intersectCapsule(origin, dir, hb.a, hb.b, hb.r, best);
+        if (t >= 0 && t < best) {
+          best = t; hit = z; index = j;
+          part = HITBOX_DEFS[j].part;
+          mul = HITBOX_DEFS[j].mul;
+        }
+      }
+
+      // A rig without the expected bones (a stand-in model, a test fixture)
+      // still has to be shootable, so fall back to the old body approximation.
+      if (!anyBox) {
+        const t = intersectCylinder(origin, dir, z.pos.x, z.pos.z, z.radius,
+          z.pos.y + 0.1, z.pos.y + z.height * 0.88, best);
+        if (t >= 0 && t < best) { best = t; hit = z; index = -1; part = 'chest'; mul = 1; }
+        const ht = intersectSphere(origin, dir, z.pos.x, z.pos.y + z.height * 0.92, z.pos.z,
+          0.155 * z.scale * (z.spec.boss ? 1.6 : 1), best);
+        if (ht >= 0 && ht < best) { best = ht; hit = z; index = -1; part = 'head'; mul = 1; }
       }
     }
 
     if (!hit) return null;
     out.zombie = hit;
     out.distance = best;
-    out.head = isHead;
+    out.part = part;
+    out.box = index;
+    out.mul = mul;
+    out.head = part === 'head';
     out.point = out.point || new THREE.Vector3();
     out.point.set(origin.x + dir.x * best, origin.y + dir.y * best, origin.z + dir.z * best);
     return out;
@@ -558,6 +718,7 @@ export class ZombieManager {
 
   update(dt, player, elapsed) {
     this._time = elapsed;
+    this._frameId++;
     this._player = player;
     this._buildGrid();
 
@@ -1009,6 +1170,15 @@ export class ZombieManager {
       this._q.setFromEuler(this._e);
       b.RightForeArm.quaternion.multiply(this._q);
     }
+
+    // Last word on the skeleton: anything shot off stays off, whatever the
+    // clip or the pose layer just did to it.
+    if (z.severed.size) {
+      for (const name of z.severed) {
+        const bone = b[name];
+        if (bone) bone.scale.setScalar(SEVERED_SCALE);
+      }
+    }
   }
 
   _updateUniforms(z, dt) {
@@ -1089,36 +1259,3 @@ export class ZombieManager {
   }
 }
 
-// ------------------------------------------------------------- ray helpers
-
-/** Ray vs infinite Y-axis cylinder, clipped to [y0, y1]. Returns t or -1. */
-function intersectCylinder(o, d, cx, cz, r, y0, y1, maxT) {
-  const ox = o.x - cx, oz = o.z - cz;
-  const a = d.x * d.x + d.z * d.z;
-  if (a < 1e-9) return -1;
-  const b = 2 * (ox * d.x + oz * d.z);
-  const c = ox * ox + oz * oz - r * r;
-  const disc = b * b - 4 * a * c;
-  if (disc < 0) return -1;
-  const sq = Math.sqrt(disc);
-  let t = (-b - sq) / (2 * a);
-  if (t < 0) t = (-b + sq) / (2 * a);
-  if (t < 0 || t > maxT) return -1;
-  const y = o.y + d.y * t;
-  if (y < y0 || y > y1) return -1;
-  return t;
-}
-
-/** Ray vs sphere. Returns t or -1. */
-function intersectSphere(o, d, cx, cy, cz, r, maxT) {
-  const ox = o.x - cx, oy = o.y - cy, oz = o.z - cz;
-  const b = 2 * (ox * d.x + oy * d.y + oz * d.z);
-  const c = ox * ox + oy * oy + oz * oz - r * r;
-  const disc = b * b - 4 * c;
-  if (disc < 0) return -1;
-  const sq = Math.sqrt(disc);
-  let t = (-b - sq) / 2;
-  if (t < 0) t = (-b + sq) / 2;
-  if (t < 0 || t > maxT) return -1;
-  return t;
-}

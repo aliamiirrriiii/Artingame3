@@ -12,6 +12,9 @@ import { Box, CollisionWorld, FlowField } from '../src/world/collision.js';
 import { Pool, RNG, clamp, damp, angleDelta, RollingAverage } from '../src/core/util.js';
 import { WEAPONS, damageAtRange, fireInterval, BOX_POOL } from '../src/weapons/arsenal.js';
 import { ARCHETYPES } from '../src/entities/zombieTypes.js';
+import {
+  HITBOX_DEFS, intersectCapsule, sphereOverlapsRay,
+} from '../src/entities/hitboxes.js';
 
 let passed = 0, failed = 0;
 const test = (name, fn) => {
@@ -114,6 +117,104 @@ test('geometry a zombie can step over is not an obstacle', () => {
   w.add(new Box(0, 0, 0, 3, 3, 0.12));   // a kerb
   const f = new FlowField(20, 1.0).bake(w, 0.4, 0.55);
   assert.equal(f.walkable(0, 0), true);
+});
+
+console.log('\nhitboxes');
+
+const norm = (x, y, z) => { const l = Math.hypot(x, y, z); return { x: x / l, y: y / l, z: z / l }; };
+
+test('a capsule is hit across its middle at the right distance', () => {
+  // Upright capsule, radius 0.2, from y=1 to y=2 at the origin.
+  const a = { x: 0, y: 1, z: 0 }, b = { x: 0, y: 2, z: 0 };
+  const t = intersectCapsule({ x: 0, y: 1.5, z: -5 }, { x: 0, y: 0, z: 1 }, a, b, 0.2, 20);
+  assert.ok(Math.abs(t - 4.8) < 1e-6, `expected the near wall at 4.8, got ${t}`);
+});
+
+test('a ray past the shoulder of a capsule misses', () => {
+  const a = { x: 0, y: 1, z: 0 }, b = { x: 0, y: 2, z: 0 };
+  assert.equal(intersectCapsule({ x: 0.25, y: 1.5, z: -5 }, { x: 0, y: 0, z: 1 }, a, b, 0.2, 20), -1);
+});
+
+test('the end caps are solid', () => {
+  const a = { x: 0, y: 1, z: 0 }, b = { x: 0, y: 2, z: 0 };
+  // Just above the top end, still inside the cap.
+  const t = intersectCapsule({ x: 0, y: 2.1, z: -5 }, { x: 0, y: 0, z: 1 }, a, b, 0.2, 20);
+  assert.ok(t > 4.8 && t < 5, `expected a cap hit just short of the axis, got ${t}`);
+  // Above the cap entirely.
+  assert.equal(intersectCapsule({ x: 0, y: 2.25, z: -5 }, { x: 0, y: 0, z: 1 }, a, b, 0.2, 20), -1);
+});
+
+test('firing straight down the axis still hits the cap', () => {
+  // Degenerate case: the cylinder quadratic collapses, only the caps remain.
+  const a = { x: 0, y: 1, z: 0 }, b = { x: 0, y: 2, z: 0 };
+  const t = intersectCapsule({ x: 0, y: 4, z: 0 }, { x: 0, y: -1, z: 0 }, a, b, 0.2, 20);
+  assert.ok(Math.abs(t - 1.8) < 1e-6, `expected the top cap at 1.8, got ${t}`);
+});
+
+test('a muzzle inside the capsule finds the far wall, not a negative t', () => {
+  const a = { x: 0, y: 1, z: 0 }, b = { x: 0, y: 2, z: 0 };
+  const t = intersectCapsule({ x: 0, y: 1.5, z: 0 }, { x: 0, y: 0, z: 1 }, a, b, 0.2, 20);
+  assert.ok(t > 0 && Math.abs(t - 0.2) < 1e-6, `expected the far wall at 0.2, got ${t}`);
+});
+
+test('a zero-length capsule degrades to a sphere', () => {
+  const a = { x: 0, y: 1, z: 0 };
+  const t = intersectCapsule({ x: 0, y: 1, z: -5 }, { x: 0, y: 0, z: 1 }, a, a, 0.3, 20);
+  assert.ok(Math.abs(t - 4.7) < 1e-6, `expected 4.7, got ${t}`);
+});
+
+test('a tilted capsule is hit along its own axis', () => {
+  const a = { x: 0, y: 1, z: 0 }, b = { x: 1, y: 2, z: 0 };
+  const mid = { x: 0.5, y: 1.5, z: 0 };
+  const t = intersectCapsule({ x: mid.x, y: mid.y, z: -5 }, { x: 0, y: 0, z: 1 }, a, b, 0.15, 20);
+  assert.ok(Math.abs(t - 4.85) < 1e-6, `expected 4.85 through the midpoint, got ${t}`);
+});
+
+test('maxT clips a hit that lies beyond it', () => {
+  const a = { x: 0, y: 1, z: 0 }, b = { x: 0, y: 2, z: 0 };
+  assert.equal(intersectCapsule({ x: 0, y: 1.5, z: -5 }, { x: 0, y: 0, z: 1 }, a, b, 0.2, 4), -1);
+});
+
+test('the broad-phase sphere accepts a ray that starts inside it', () => {
+  // Point blank: the near root is behind the muzzle, so a naive distance test
+  // would reject the zombie the player has their barrel against.
+  assert.ok(sphereOverlapsRay({ x: 0, y: 1, z: 0 }, { x: 0, y: 0, z: 1 }, 0, 1, 0.2, 1.5, 0.3));
+  assert.ok(!sphereOverlapsRay({ x: 0, y: 1, z: -5 }, { x: 0, y: 0, z: 1 }, 0, 1, 0, 0.5, 3));
+  assert.ok(!sphereOverlapsRay({ x: 0, y: 1, z: -5 }, { x: 0, y: 0, z: -1 }, 0, 1, 0, 0.5, 30));
+  assert.ok(sphereOverlapsRay({ x: 0, y: 1, z: -5 }, { x: 0, y: 0, z: 1 }, 0, 1, 0, 0.5, 30));
+});
+
+test('an oblique ray through a limb capsule is found', () => {
+  const a = { x: 0, y: 1.0, z: 0 }, b = { x: 0, y: 1.45, z: 0 };   // a thigh
+  const d = norm(0.3, -0.1, 1);
+  const t = intersectCapsule({ x: -1.5, y: 1.7, z: -5 }, d, a, b, 0.088, 40);
+  assert.ok(t > 0, 'a diagonal shot through the thigh should connect');
+});
+
+test('the hitbox table covers the body and names real Mixamo bones', () => {
+  const parts = new Set(HITBOX_DEFS.map((h) => h.part));
+  for (const p of ['head', 'chest', 'gut', 'arm', 'leg']) {
+    assert.ok(parts.has(p), `no hitbox for ${p}`);
+  }
+  const known = new Set([
+    'Hips', 'Spine', 'Spine1', 'Spine2', 'Neck', 'Head', 'HeadTop_End',
+    'LeftShoulder', 'LeftArm', 'LeftForeArm', 'LeftHand',
+    'RightShoulder', 'RightArm', 'RightForeArm', 'RightHand',
+    'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'RightUpLeg', 'RightLeg', 'RightFoot',
+  ]);
+  for (const h of HITBOX_DEFS) {
+    assert.ok(known.has(h.a) && known.has(h.b), `unknown bone in ${h.part}: ${h.a}/${h.b}`);
+    assert.ok(h.r > 0.02 && h.r < 0.4, `implausible radius on ${h.part}: ${h.r}`);
+    assert.ok(h.t1 > h.t0, `${h.part} capsule has no length`);
+    assert.ok(h.mul > 0 && h.mul <= 1, `${h.part} multiplier out of range`);
+    if (h.part === 'arm' || h.part === 'leg') {
+      assert.ok(h.limb, `${h.part} must name the bone that comes off`);
+    }
+  }
+  // Every limb capsule severs a distinct bone, or two boxes would take the
+  // same arm off twice and one would never be reachable.
+  const limbs = HITBOX_DEFS.filter((h) => h.limb).map((h) => h.limb);
+  assert.equal(new Set(limbs).size, limbs.length, 'duplicate sever bone');
 });
 
 console.log('\nweapons');

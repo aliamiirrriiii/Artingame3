@@ -503,11 +503,14 @@ export class Combat {
         hitList.push(z);
         const dist = travelled + zDist;
         let dmg = damageAtRange(w, dist) * this._dmgScale();
+        // The head keeps the weapon's own multiplier so a sniper still one-taps;
+        // everything else takes the body part's, so a limb is a poor place to aim.
         if (zHit.head) dmg *= w.headMul ?? 2;
+        else dmg *= zHit.mul ?? 1;
         if (this.instaKill) dmg = 1e9;
 
         const r = this.zm.damage(z, dmg, zHit.point, dir, {
-          crit: zHit.head, stagger: w.stagger ?? 0, byPlayer: true,
+          crit: zHit.head, stagger: w.stagger ?? 0, byPlayer: true, part: zHit.part,
         });
         anyHit = true;
         if (this.onDamage) this.onDamage(zHit.point, dmg, zHit.head);

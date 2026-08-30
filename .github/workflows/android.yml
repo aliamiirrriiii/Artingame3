@@ -134,6 +134,13 @@ jobs:
       - name: Touch controls
         run: node tools/touchtest.mjs
 
+      - name: Zombie hitboxes
+        # Spawns one of every archetype and shoots at their bones: head, chest,
+        # shin and forearm each have to come back as the part they are, and a
+        # severed limb has to stop being shootable. The static-box version of
+        # this test could not have failed, which is exactly why it was wrong.
+        run: node tools/smoke.mjs --page tools/zombies.html --viewport 960x540
+
       - name: Weapon mechanisms
         # Builds all twelve weapons through the real viewmodel and asserts
         # every slide, bolt, pump, cylinder and magazine actually moves. The

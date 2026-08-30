@@ -13,6 +13,7 @@ import { Level } from '../src/world/level.js';
 import { Sky } from '../src/render/sky.js';
 import { Effects } from '../src/render/fx.js';
 import { ZombieManager, POSE } from '../src/entities/zombies.js';
+import { HITBOX_DEFS } from '../src/entities/hitboxes.js';
 import { PRESETS } from '../src/core/quality.js';
 
 const report = { errors: [], steps: [] };
@@ -61,6 +62,83 @@ try {
   ];
   let vi = 0; window.__setView = n => { vi = n; };
 
+
+  // ------------------------------------------------------------ hitbox probe
+  //
+  // The hitboxes are capsules strung between animated bones, so the only way
+  // to know they are where the zombie is *drawn* is to shoot at the bones and
+  // see what comes back. Runs once the pose layer has settled.
+  const probe = () => {
+    const out = { checked: 0, fails: [] };
+    const fail = (m) => out.fails.push(m);
+    const V = (x, y, z) => new THREE.Vector3(x, y, z);
+
+    for (const z of zm.alive) {
+      if (!z.bones.Head) { fail(`${z.type}: no Head bone`); continue; }
+      zm._frameId++;                       // force a rebuild for this probe
+      zm._refreshHitboxes(z);
+      const box = (part, n = 0) => {
+        let seen = 0;
+        for (let i = 0; i < HITBOX_DEFS.length; i++) {
+          if (HITBOX_DEFS[i].part !== part) continue;
+          if (seen++ === n) return z.hitboxes[i];
+        }
+        return null;
+      };
+      const mid = (hb) => hb.a.clone().lerp(hb.b, 0.5);
+
+      // Straight at the head. This is the whole point of the change.
+      const head = box('head');
+      const hp = mid(head);
+      let hit = zm.raycast(V(hp.x, hp.y, hp.z - 4), V(0, 0, 1), 8, {});
+      out.checked++;
+      if (!hit || hit.zombie !== z) fail(`${z.type}: head ray missed entirely`);
+      else if (hit.part !== 'head') fail(`${z.type}: head ray returned ${hit.part}`);
+
+      // The old static approximation put the head here. If the two agree the
+      // pose layer is not being taken into account after all.
+      const stat = V(z.pos.x, z.pos.y + z.height * 0.92, z.pos.z);
+      out.drift = Math.max(out.drift || 0, stat.distanceTo(hp));
+
+      // Chest from behind, so the raised arms are not in the way.
+      const cp = mid(box('chest'));
+      hit = zm.raycast(V(cp.x, cp.y, cp.z + 4), V(0, 0, -1), 8, {});
+      out.checked++;
+      if (!hit || hit.zombie !== z) fail(`${z.type}: chest ray missed`);
+      else if (hit.part !== 'chest') fail(`${z.type}: chest ray returned ${hit.part}`);
+
+      // A shin, from the front. Nothing else lives at that height.
+      const lp = mid(box('leg', 1));
+      hit = zm.raycast(V(lp.x, lp.y, lp.z - 4), V(0, 0, 1), 8, {});
+      out.checked++;
+      if (!hit || hit.zombie !== z) fail(`${z.type}: leg ray missed`);
+      else if (hit.part !== 'leg') fail(`${z.type}: leg ray returned ${hit.part}`);
+
+      // A forearm, and then the same shot again once it has been taken off.
+      // Fired inward from outside the body so the arm is the outermost thing
+      // on the line — some archetypes hold theirs across the chest.
+      const ap = mid(box('arm', 1));
+      const ao = V(ap.x - z.pos.x, 0, ap.z - z.pos.z);
+      if (ao.length() < 0.05) ao.set(1, 0, 0);
+      ao.normalize();
+      const aOrigin = V(ap.x + ao.x * 4, ap.y, ap.z + ao.z * 4);
+      const aDir = ao.clone().negate();
+      hit = zm.raycast(aOrigin, aDir, 8, {});
+      out.checked++;
+      if (!hit || hit.part !== 'arm') fail(`${z.type}: forearm ray returned ${hit ? hit.part : 'nothing'}`);
+
+      zm._sever(z, 'LeftForeArm', V(0, 0, 1), 1);
+      zm._frameId++;
+      hit = zm.raycast(aOrigin, aDir, 8, {});
+      out.checked++;
+      if (hit && hit.zombie === z && HITBOX_DEFS[hit.box]?.limb === 'LeftForeArm') {
+        fail(`${z.type}: severed forearm is still shootable`);
+      }
+      if (z.bones.LeftForeArm.scale.x > 0.01) fail(`${z.type}: severed bone did not collapse`);
+    }
+    return out;
+  };
+
   let t = 0, frames = 0; const times = [];
   const loop = () => {
     const dt = 0.016; t += dt; frames++;
@@ -77,11 +155,17 @@ try {
     stage.update(dt, t);
     stage.render();
     times.push(performance.now() - s);
+    if (frames === 20) report.hitbox = probe();
     if (frames === 24) {
       const so = times.slice().sort((a,b)=>a-b);
       report.frameMs = { median: Math.round(so[12]*100)/100, p90: Math.round(so[21]*100)/100 };
       report.draws = stage.drawCalls; report.tris = stage.triangles;
       report.alive = zm.aliveCount;
+      const hb = report.hitbox || { fails: ['probe never ran'] };
+      if (hb.fails.length) report.errors.push('hitbox: ' + hb.fails.join('; '));
+      if (!(hb.drift > 0.03)) {
+        report.errors.push(`hitbox: head box sits ${(hb.drift || 0).toFixed(3)}m from the old static guess — it is not following the pose`);
+      }
       report.ok = report.errors.length === 0;
       report.done = true;
     }
