@@ -12,6 +12,7 @@ canvas{display:block;width:100%;height:100%}
 <script type="module">
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { AssetManager, MANIFEST } from '../src/core/assets.js';
 import { MaterialLibrary } from '../src/world/materials.js';
 import { buildWeapon, triangleCount } from '../src/weapons/gunsmith.js';
@@ -164,6 +165,72 @@ try {
       if (still.length) report.errors.push(`${id}: ${still.join(',')} never moved`);
     }
     vm.dispose();
+    report.ok = report.errors.length === 0;
+    report.done = true;
+    return;
+  }
+
+  // Side-by-side against a downloaded pack. Mine on the top row, theirs below,
+  // same lighting, each normalised to the same overall length — because the
+  // only question worth answering is which one looks better, and a triangle
+  // count cannot answer it.
+  //   ?compare=pistol:m1911_reloadable,smg:mp5a5_reloadable
+  //
+  // Fixtures live in tools/fixtures/, which is gitignored and — importantly —
+  // outside the assets/ tree that the Gradle sync copies wholesale into the
+  // APK. Evaluation models are not shipping models. Populate it with:
+  //
+  //   git clone --filter=blob:none --no-checkout --depth 1 \
+  //     https://github.com/AetherRadar/operation-steel-tide /tmp/st
+  //   git -C /tmp/st sparse-checkout set --no-cone \
+  //     assets/models/steel_tide_reloadable_weapons
+  //   git -C /tmp/st checkout
+  //   cp /tmp/st/assets/models/steel_tide_reloadable_weapons/*.glb tools/fixtures/
+  if (q.get('compare')) {
+    const pairs = q.get('compare').split(',').map((s) => s.split(':'));
+    const loader = new GLTFLoader();
+    const tags = document.getElementById('tags');
+    const CELL = 1.0;
+    const place = (obj, col, row, label) => {
+      const box = new THREE.Box3().setFromObject(obj);
+      const size = box.getSize(new THREE.Vector3());
+      const c = box.getCenter(new THREE.Vector3());
+      const k = (CELL * 0.80) / Math.max(size.x, size.y, size.z);
+      const holder = new THREE.Group();
+      obj.position.set(-c.x * k, -c.y * k, -c.z * k);
+      obj.scale.setScalar(k);
+      holder.add(obj);
+      holder.position.set((col - (pairs.length - 1) / 2) * CELL, row === 0 ? 0.34 : -0.34, 0);
+      holder.rotation.set(0.28, 2.15, 0);
+      scene.add(holder);
+      const t = document.createElement('div');
+      t.innerHTML = `<b>${label}</b>`;
+      tags.appendChild(t);
+      holder.userData.tag = t;
+      return holder;
+    };
+    for (let i = 0; i < pairs.length; i++) {
+      const [mineId, theirFile] = pairs[i];
+      const mine = buildWeapon(WEAPONS[mineId], mats);
+      place(mine, i, 0, `OURS · ${WEAPONS[mineId].short} · ${Math.round(triangleCount(mine))} tris`);
+      try {
+        const g = await loader.loadAsync(`fixtures/${theirFile}.glb`);
+        let tris = 0;
+        g.scene.traverse((o) => { if (o.isMesh) tris += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3; });
+        place(g.scene, i, 1, `THEIRS · ${theirFile.replace('_reloadable', '').toUpperCase()} · ${Math.round(tris)} tris`);
+      } catch (e) { report.errors.push(`${theirFile}: ${e.message}`); }
+    }
+    const cam = new THREE.PerspectiveCamera(30, W / H, 0.05, 40);
+    cam.position.set(0, 0, pairs.length * CELL * 2.0);
+    cam.lookAt(0, 0, 0);
+    renderer.render(scene, cam);
+    const v = new THREE.Vector3();
+    for (const o of scene.children) {
+      if (!o.userData.tag) continue;
+      v.copy(o.position).project(cam);
+      o.userData.tag.style.left = `${(v.x * 0.5 + 0.5) * 100}%`;
+      o.userData.tag.style.top = `${(-v.y * 0.5 + 0.5) * 100 + 9}%`;
+    }
     report.ok = report.errors.length === 0;
     report.done = true;
     return;

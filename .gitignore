@@ -13,3 +13,7 @@ android/app/src/main/assets/
 *.aab
 *.keystore
 *.jks
+
+# Third-party models pulled in only to compare against ours. Deliberately not
+# under assets/, which the Gradle sync copies whole into the APK.
+tools/fixtures/
