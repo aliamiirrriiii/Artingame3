@@ -11,7 +11,8 @@
     "smoke": "node tools/smoke.mjs",
     "test": "node tools/units.mjs",
     "touch": "node tools/touchtest.mjs",
-    "apk": "cd android && ./gradlew assembleDebug"
+    "apk": "cd android && ./gradlew assembleDebug",
+    "verify:apk": "node tools/verify-apk.mjs"
   },
   "engines": {
     "node": ">=18"

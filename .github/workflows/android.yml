@@ -69,12 +69,21 @@ jobs:
         run: ./gradlew --no-daemon assembleRelease
         continue-on-error: true
 
+      - name: Verify APK contents
+        # Guards against the quiet failure: an APK that builds, installs and
+        # launches to a black screen because an asset never made it in.
+        run: |
+          APK=$(find android/app/build/outputs/apk/debug -name '*.apk' | head -1)
+          node tools/verify-apk.mjs "$APK"
+
       - name: Report APK size
         run: |
-          echo "### APK output" >> "$GITHUB_STEP_SUMMARY"
-          for f in $(find android/app/build/outputs/apk -name '*.apk' | sort); do
-            printf -- '- `%s` — %s\n' "$f" "$(du -h "$f" | cut -f1)" >> "$GITHUB_STEP_SUMMARY"
-          done
+          {
+            echo "### APK output"
+            for f in $(find android/app/build/outputs/apk -name '*.apk' | sort); do
+              printf -- '- `%s` — %s\n' "$f" "$(du -h "$f" | cut -f1)"
+            done
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
