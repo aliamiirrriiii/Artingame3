@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { clamp, damp, lerp } from '../core/util.js';
 import { buildWeapon } from './gunsmith.js';
-import { MODEL_VIEWMODELS, buildModelWeapon } from './viewmodels.js';
+import { MODEL_VIEWMODELS, buildModelWeapon, buildAdoptedWeapon } from './viewmodels.js';
 
 /** Where a gunsmith-built weapon is held at the hip. Models bring their own. */
 const HIP_POS = new THREE.Vector3(0.136, -0.116, -0.335);
@@ -136,7 +136,9 @@ export class Viewmodel {
     // holding nothing.
     const cfg = MODEL_VIEWMODELS[spec.model.type];
     if (cfg && this.assets) {
-      const g = buildModelWeapon(spec, cfg, this.assets);
+      const g = cfg.adopt
+        ? buildAdoptedWeapon(spec, cfg, this.assets, this.mats)
+        : buildModelWeapon(spec, cfg, this.assets);
       if (g) return g;
     }
     return buildWeapon(spec, this.mats);

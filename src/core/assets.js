@@ -235,6 +235,9 @@ export const MANIFEST = {
     { key: 'brokenWindow', url: 'assets/models/broken_window.glb' },
     { key: 'trafficCone', url: 'assets/models/trafficcone/TrafficCone.gltf' },
     { key: 'viewmodelRifle', url: 'assets/models/viewmodel_rifle.glb' },
+    { key: 'wpnPistol', url: 'assets/models/wpn_pistol.glb' },
+    { key: 'wpnSmg', url: 'assets/models/wpn_smg.glb' },
+    { key: 'wpnSniper', url: 'assets/models/wpn_sniper.glb' },
   ],
   hdri: [
     { key: 'day', url: 'assets/hdri/day_1k.hdr' },

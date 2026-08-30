@@ -4,7 +4,8 @@
     "three": "https://raw.githubusercontent.com/mrdoob/three.js/r180/examples",
     "khronos": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models",
     "gfonts": "https://raw.githubusercontent.com/google/fonts/main/ofl",
-    "enari": "https://raw.githubusercontent.com/iErcann/enari-engine/main/public"
+    "enari": "https://raw.githubusercontent.com/iErcann/enari-engine/main/public",
+    "steeltide": "https://raw.githubusercontent.com/AetherRadar/operation-steel-tide/main/assets/models/steel_tide_reloadable_weapons"
   },
   "assets": [
     {
@@ -240,6 +241,24 @@
       "dst": "assets/models/viewmodel_rifle.glb",
       "license": "Provenance unclear — NOT cleared for release. Taken from iErcann/enari-engine (the repository is MIT, but this model is not among the Sketchfab attributions in its README, and its material names \"t_phoenix\" and \"v_hands\" are Counter-Strike / Half-Life viewmodel conventions, so it is most likely derived from those assets). Included at the project owner's explicit request for a non-commercial test build. Replace before shipping.",
       "use": "First-person rifle viewmodel: 14,091 triangles, rigged arms with gloved hands and a full finger chain, and an authored hold animation. Used for the AKM slot, and its hands rig is reused to hold the procedurally built weapons."
+    },
+    {
+      "src": "steeltide:m1911_reloadable.glb",
+      "dst": "assets/models/wpn_pistol.glb",
+      "license": "CC0 1.0 Universal — weapon bodies by Quaternius (Ultimate Guns Pack, quaternius.com); reload mechanism geometry, sockets and GLB composition by Operation Steel Tide (MIT), which documents the provenance in docs/CONTENT_PROVENANCE.md. Reached through that repository because quaternius.com and poly.pizza are unreachable from the build sandbox.",
+      "use": "Pistol viewmodel. Ships named ChargingHandle and Magazine parts plus grip sockets, so the slide and magazine animate through the same rig as the built weapons."
+    },
+    {
+      "src": "steeltide:mp5a5_reloadable.glb",
+      "dst": "assets/models/wpn_smg.glb",
+      "license": "CC0 1.0 Universal — weapon bodies by Quaternius (Ultimate Guns Pack, quaternius.com); reload mechanism geometry, sockets and GLB composition by Operation Steel Tide (MIT), which documents the provenance in docs/CONTENT_PROVENANCE.md. Reached through that repository because quaternius.com and poly.pizza are unreachable from the build sandbox.",
+      "use": "SMG viewmodel. Carries a full socket set — muzzle, optic rail, primary and support grip, magazine well — so its muzzle position and sight height are read off the model."
+    },
+    {
+      "src": "steeltide:awm_reloadable.glb",
+      "dst": "assets/models/wpn_sniper.glb",
+      "license": "CC0 1.0 Universal — weapon bodies by Quaternius (Ultimate Guns Pack, quaternius.com); reload mechanism geometry, sockets and GLB composition by Operation Steel Tide (MIT), which documents the provenance in docs/CONTENT_PROVENANCE.md. Reached through that repository because quaternius.com and poly.pizza are unreachable from the build sandbox.",
+      "use": "Bolt-action sniper viewmodel, with bipod, scope and a separated magazine."
     }
   ]
 }

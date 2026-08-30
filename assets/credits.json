@@ -54,6 +54,14 @@
       ]
     },
     {
+      "license": "CC0 1.0 Universal — weapon bodies by Quaternius (Ultimate Guns Pack, quaternius.com); reload mechanism geometry, sockets and GLB composition by Operation Steel Tide (MIT), which documents the provenance in docs/CONTENT_PROVENANCE.md. Reached through that repository because quaternius.com and poly.pizza are unreachable from the build sandbox.",
+      "files": [
+        "models/wpn_pistol.glb",
+        "models/wpn_smg.glb",
+        "models/wpn_sniper.glb"
+      ]
+    },
+    {
       "license": "MIT (three.js)",
       "files": [
         "textures/brick_albedo.jpg",

@@ -17,7 +17,7 @@ import { AssetManager, MANIFEST } from '../src/core/assets.js';
 import { MaterialLibrary } from '../src/world/materials.js';
 import { buildWeapon, triangleCount } from '../src/weapons/gunsmith.js';
 import { Viewmodel } from '../src/weapons/viewmodel.js';
-import { MODEL_VIEWMODELS, buildModelWeapon } from '../src/weapons/viewmodels.js';
+import { MODEL_VIEWMODELS, buildModelWeapon, buildAdoptedWeapon } from '../src/weapons/viewmodels.js';
 import { WEAPONS } from '../src/weapons/arsenal.js';
 
 /**
@@ -83,8 +83,10 @@ try {
   // Viewmodel inspection: what is in the downloaded rig, where it sits, and how
   // big it is once its own hold animation has been applied. A rigged model's
   // bind pose tells you none of that.
-  if (q.get('inspect')) {
-    const gltf = assets.model(q.get('inspect'));
+  if (q.get('inspect') || q.get('inspectFile')) {
+    const gltf = q.get('inspectFile')
+      ? await new GLTFLoader().loadAsync(`fixtures/${q.get('inspectFile')}.glb`)
+      : assets.model(q.get('inspect'));
     if (!gltf) { report.errors.push(`no model "${q.get('inspect')}"`); report.done = true; return; }
     const root = gltf.scene;
     if (gltf.animations && gltf.animations.length) {
@@ -110,12 +112,31 @@ try {
     // Where the hands actually are. Calibrating a viewmodel by eye takes a
     // render per guess; the grip point is a bone, so it can just be read.
     const bones = {};
-    for (const n of ['r_wrist', 'l_wrist', 'r_middle_low', 'l_middle_low', 'root']) {
+    for (const n of ['r_wrist', 'l_wrist', 'r_middle_low', 'l_middle_low', 'root',
+                     'MuzzleSocket', 'PrimaryGripSocket', 'SupportGripSocket',
+                     'MagazineWellSocket', 'MagazineGripSocket', 'ChargingHandleSocket',
+                     'OpticRailSocket']) {
       const o = root.getObjectByName(n);
       if (o) bones[n] = o.getWorldPosition(new THREE.Vector3()).toArray().map(v => +v.toFixed(3));
     }
+    // The spare magazine floats beside the weapon as a display prop; leaving it
+    // in makes an AWM measure two metres long.
+    const spares = [];
+    root.traverse((o) => { if (/spare/i.test(o.name || '')) spares.push(o); });
+    for (const o of spares) o.visible = false;
+    const realBox = new THREE.Box3();
+    root.traverse((o) => {
+      if ((o.isMesh || o.isSkinnedMesh) && !/spare/i.test(o.name || '')
+          && !/spare/i.test(o.parent?.name || '')) realBox.expandByObject(o);
+    });
+    for (const o of spares) o.visible = true;
+
     report.inspect = {
       bones,
+      withoutSpares: {
+        min: realBox.min.toArray().map((v) => +v.toFixed(3)),
+        max: realBox.max.toArray().map((v) => +v.toFixed(3)),
+      },
       clips: (gltf.animations || []).map(a => ({ name: a.name, dur: +a.duration.toFixed(2) })),
       whole: box(root),
       meshes,
@@ -245,7 +266,8 @@ try {
     const cfg = { ...(MODEL_VIEWMODELS[WEAPONS[vm].model.type] || {}) };
     if (q.get('vs')) cfg.scale = Number(q.get('vs'));
     if (q.get('vo')) cfg.offset = q.get('vo').split(',').map(Number);
-    const g = (cfg.asset && buildModelWeapon(WEAPONS[vm], cfg, assets)) || buildWeapon(WEAPONS[vm], mats);
+    const g = (cfg.asset && (cfg.adopt ? buildAdoptedWeapon(WEAPONS[vm], cfg, assets, mats)
+      : buildModelWeapon(WEAPONS[vm], cfg, assets))) || buildWeapon(WEAPONS[vm], mats);
     const rig = new THREE.Group();
     rig.add(g);
     rig.scale.setScalar(0.94);
@@ -267,7 +289,8 @@ try {
   const ads = q.get('ads');
   if (ads && WEAPONS[ads]) {
     const cfg = MODEL_VIEWMODELS[WEAPONS[ads].model.type];
-    const g = (cfg && buildModelWeapon(WEAPONS[ads], cfg, assets)) || buildWeapon(WEAPONS[ads], mats);
+    const g = (cfg && (cfg.adopt ? buildAdoptedWeapon(WEAPONS[ads], cfg, assets, mats)
+      : buildModelWeapon(WEAPONS[ads], cfg, assets))) || buildWeapon(WEAPONS[ads], mats);
     const rig = new THREE.Group();
     rig.add(g);
     rig.position.set(...(g.userData.adsPos || [0, -(g.userData.sightY ?? 0.02),
