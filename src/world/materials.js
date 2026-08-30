@@ -256,6 +256,81 @@ export class MaterialLibrary {
       color: 0xdfe6ef, roughness: 0.09, metalness: 1.0, envMapIntensity: 2.2,
     }));
 
+    // -------------------------------------------------------- weapon finishes
+    /*
+     * The viewmodel gets its own set of metals rather than reusing the world's.
+     * A gun is the one object on screen at a fixed half-metre from the camera,
+     * so it can carry a texel density and an environment response that would be
+     * wasted on a wall, and it is the only thing whose silhouette the player
+     * looks at for hours.
+     *
+     * Every one of these reads vertex colours: that is where the gunsmith bakes
+     * edge wear (bright bare metal on the chamfers a holster would rub) and the
+     * grime that collects along the bottom of a receiver. Baking it into the
+     * mesh costs nothing at runtime and survives the per-material merge.
+     *
+     * UVs on gunsmith parts are in metres, so a repeat of 40 puts one tile of
+     * detail every 25 mm.
+     */
+    const gunN = a.normalFromHeight('roughDetail', 'gunGrainNormal', 0.7);
+    const gun = (o) => this._std({ vertexColors: true, envMapIntensity: 1.9, ...o });
+
+    // Parkerised receiver steel: matte, slightly warm, the default for frames.
+    this.set('gunSteel', gun({
+      color: 0x33373b, roughness: 0.46, metalness: 1.0,
+      normalMap: rep(gunN, 40, 40), normalScale: new THREE.Vector2(0.55, 0.55),
+      roughnessMap: rep(a.tex('roughDetail'), 30, 30),
+    }));
+
+    // Blued steel for barrels, slides and anything machined and oiled.
+    this.set('gunBlued', gun({
+      color: 0x24282c, roughness: 0.24, metalness: 1.0,
+      normalMap: rep(gunN, 55, 55), normalScale: new THREE.Vector2(0.28, 0.28),
+      envMapIntensity: 2.2,
+    }));
+
+    // Hard-anodised aluminium: receivers, rails, optic bodies.
+    this.set('gunAlloy', gun({
+      color: 0x2c2f31, roughness: 0.40, metalness: 0.9,
+      normalMap: rep(gunN, 46, 46), normalScale: new THREE.Vector2(0.45, 0.45),
+    }));
+
+    // Glass-filled polymer: grips, handguards, stocks. Not a metal.
+    this.set('gunGrip', gun({
+      color: 0x131518, roughness: 0.74, metalness: 0.02,
+      normalMap: rep(a.tex('carbonNormal'), 70, 70),
+      normalScale: new THREE.Vector2(0.5, 0.5),
+      envMapIntensity: 1.0,
+    }));
+
+    // Oiled walnut for the furniture on the older weapons.
+    this.set('gunWood', gun({
+      color: 0x3c2b1e, roughness: 0.54, metalness: 0.0,
+      map: rep(a.tex('woodAlbedo'), 5, 5),
+      normalMap: rep(woodN, 5, 5), normalScale: new THREE.Vector2(0.5, 0.5),
+      envMapIntensity: 1.2,
+    }));
+
+    this.set('gunBrass', gun({
+      color: 0xc9973b, roughness: 0.28, metalness: 1.0, envMapIntensity: 2.0,
+    }));
+
+    // Optic glass. Not transmissive — a viewmodel lens only ever has to look
+    // dark, wet and coated, and transmission on a per-frame object is not free.
+    this.set('gunGlass', new THREE.MeshPhysicalMaterial({
+      color: 0x0a1418, roughness: 0.06, metalness: 0.0,
+      clearcoat: 1.0, clearcoatRoughness: 0.03,
+      reflectivity: 0.9, envMapIntensity: 2.6,
+      vertexColors: true,
+    }));
+
+    // Emissive bits: reticles, charge cores, pilot flames, arc channels.
+    this.set('gunGlow', new THREE.MeshBasicMaterial({
+      color: 0xffffff, vertexColors: true, toneMapped: false,
+      transparent: true, opacity: 0.95, depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    }));
+
     this.set('paintedMetal', this.breakup(this._std({
       color: 0x2b3a4a,
       roughness: 0.42,

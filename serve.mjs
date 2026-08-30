@@ -27,6 +27,8 @@ const TYPES = {
   '.ogg': 'audio/ogg', '.mp3': 'audio/mpeg', '.wav': 'audio/wav',
   '.wasm': 'application/wasm',
   '.svg': 'image/svg+xml',
+  '.ttf': 'font/ttf', '.otf': 'font/otf', '.woff2': 'font/woff2',
+  '.txt': 'text/plain; charset=utf-8',
   '.ico': 'image/x-icon',
 };
 

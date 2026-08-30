@@ -129,3 +129,9 @@ jobs:
 
       - name: Touch controls
         run: node tools/touchtest.mjs
+
+      - name: Weapon mechanisms
+        # Builds all twelve weapons through the real viewmodel and asserts
+        # every slide, bolt, pump, cylinder and magazine actually moves. The
+        # bot run only ever holds the pistol, so nothing else covers these.
+        run: node tools/smoke.mjs --page tools/gunpreview.html --viewport 800x500 --params anim=1

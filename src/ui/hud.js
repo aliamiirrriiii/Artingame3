@@ -15,6 +15,11 @@ import { PERKS } from '../game/economy.js';
 
 const $ = (id) => document.getElementById(id);
 
+/** Pixels per degree on the compass strip: 330px of strip shows ~89 degrees. */
+const COMPASS_PPD = 3.7;
+/** Above this magazine size the pip row switches from one-per-round to a scale. */
+const MAX_PIPS = 24;
+
 export class HUD {
   constructor(stage) {
     this.stage = stage;
@@ -47,6 +52,10 @@ export class HUD {
       perf: $('perf'),
       boxSpin: $('box-spin'),
       lowfps: $('lowfps'),
+      compass: $('compass'),
+      compassMarks: $('compass-marks'),
+      magPips: $('mag-pips'),
+      killfeed: $('killfeed'),
     };
 
     this.cache = {};
@@ -56,7 +65,66 @@ export class HUD {
     this._announceTimer = 0;
 
     this._buildDamageNumbers();
+    this._buildCompass();
     this._projected = new THREE.Vector3();
+    this._facing = new THREE.Vector3();
+    this._pips = [];
+  }
+
+  // --------------------------------------------------------------- compass
+
+  /*
+   * A bearing strip. The marks are laid out once across two full turns and the
+   * whole strip is slid under a fixed centre index, which is both cheaper than
+   * re-laying it out every frame and free of the seam you get from wrapping a
+   * single 360-degree run: the window we show is always well inside the second
+   * turn, so there is never an edge to fall off.
+   */
+  _buildCompass() {
+    const marks = this.el.compassMarks;
+    if (!marks) return;
+    const CARD = { 0: 'N', 45: 'NE', 90: 'E', 135: 'SE', 180: 'S', 225: 'SW', 270: 'W', 315: 'NW' };
+    for (let d = 0; d <= 720; d += 15) {
+      const bearing = d % 360;
+      const label = CARD[bearing];
+      const tick = document.createElement('div');
+      tick.className = label ? 'm major' : 'm';
+      tick.style.left = `${d * COMPASS_PPD}px`;
+      marks.appendChild(tick);
+      if (!label) continue;
+      const cap = document.createElement('div');
+      cap.className = label.length === 1 ? 'c' : 'c ord';
+      cap.style.left = `${d * COMPASS_PPD}px`;
+      cap.textContent = label;
+      marks.appendChild(cap);
+    }
+    marks.style.width = `${720 * COMPASS_PPD}px`;
+    this._compassX = null;
+  }
+
+  _updateCompass(camera) {
+    const marks = this.el.compassMarks;
+    if (!marks) return;
+    camera.getWorldDirection(this._facing);
+    // Bearing is measured off -Z, which is the direction the arena's north wall
+    // faces, so "N" points the way the player starts out looking.
+    let bearing = Math.atan2(this._facing.x, -this._facing.z) * (180 / Math.PI);
+    if (bearing < 0) bearing += 360;
+    // Offset into the second turn so the visible window never runs off an end.
+    const x = this._halfCompass() - (bearing + 360) * COMPASS_PPD;
+    if (this._compassX !== null && Math.abs(this._compassX - x) < 0.25) return;
+    this._compassX = x;
+    marks.style.transform = `translateX(${x.toFixed(1)}px)`;
+  }
+
+  /** Cached because reading offsetWidth every frame forces a layout. */
+  _halfCompass() {
+    if (this._compassHalf === undefined || this._compassW !== window.innerWidth) {
+      this._compassW = window.innerWidth;
+      this._compassHalf = (this.el.compass?.offsetWidth || 330) / 2;
+      this._compassX = null;
+    }
+    return this._compassHalf;
   }
 
   // ------------------------------------------------------------ core stats
@@ -155,6 +223,7 @@ export class HUD {
       this.cache.low = w.lowAmmo;
       this.el.ammo.classList.toggle('low', w.lowAmmo);
     }
+    this._setMagPips(w.mag, w.magSize);
 
     if (this.cache.reloading !== w.reloading) {
       this.cache.reloading = w.reloading;
@@ -186,6 +255,48 @@ export class HUD {
         this.el.slots.appendChild(d);
       });
     }
+  }
+
+  /*
+   * Rounds left, as ticks. One tick per round while that stays readable; past
+   * that the row becomes a coarser scale, because twenty-four ticks you can
+   * count at a glance beat a hundred you cannot.
+   */
+  _setMagPips(mag, magSize) {
+    const size = typeof magSize === 'number' && isFinite(magSize) ? magSize : 0;
+    const count = size > 0 ? Math.min(size, MAX_PIPS) : 0;
+    if (this.cache.pipCount !== count) {
+      this.cache.pipCount = count;
+      this.el.magPips.innerHTML = '';
+      this._pips = [];
+      for (let i = 0; i < count; i++) {
+        const d = document.createElement('div');
+        d.className = 'pip';
+        this.el.magPips.appendChild(d);
+        this._pips.push(d);
+      }
+      this.cache.pipsFilled = -1;
+    }
+    if (count === 0) return;
+    const rounds = typeof mag === 'number' ? mag : size;
+    const filled = clamp(Math.ceil((rounds / size) * count), 0, count);
+    if (this.cache.pipsFilled === filled) return;
+    this.cache.pipsFilled = filled;
+    for (let i = 0; i < count; i++) this._pips[i].classList.toggle('spent', i >= filled);
+  }
+
+  // -------------------------------------------------------------- kill feed
+
+  /** One line per kill, newest at the bottom. Purely feedback — no state. */
+  killFeed(name, crit = false) {
+    const row = document.createElement('div');
+    row.className = crit ? 'kf crit' : 'kf';
+    const b = document.createElement('b');
+    b.textContent = name;
+    row.appendChild(b);
+    this.el.killfeed.appendChild(row);
+    while (this.el.killfeed.children.length > 5) this.el.killfeed.firstChild.remove();
+    setTimeout(() => row.remove(), 3200);
   }
 
   // ------------------------------------------------------------- crosshair
@@ -371,6 +482,7 @@ export class HUD {
 
   update(dt, camera) {
     this._updateDamageNumbers(dt, camera);
+    this._updateCompass(camera);
     if (this._deltaTimer > 0) {
       this._deltaTimer -= dt;
       if (this._deltaTimer <= 0) {

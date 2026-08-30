@@ -322,6 +322,7 @@ class Game {
       if (byPlayer) {
         const gained = this.economy.award(z.spec.points, 'kill');
         this.hud.setPoints(this.economy.points, gained);
+        this.hud.killFeed(z.spec.name, !!z.spec.boss);
       }
       if (this.player.hasPerk('vampire')) this.player.heal(4);
     };

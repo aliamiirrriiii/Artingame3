@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { clamp, damp, lerp, rand, TAU } from '../core/util.js';
+import { clamp, damp, lerp } from '../core/util.js';
+import { buildWeapon } from './gunsmith.js';
 
 /**
  * First-person weapon viewmodels, built procedurally.
@@ -51,9 +51,17 @@ export class Viewmodel {
     this.spin = 0; this.spinRate = 0;
     this.charge = 0;
     this.pullback = 0;
+    // Action cycle: 0 at the instant of firing, 1 once the action is closed.
+    this.cycleT = 1;
+    this.cylTarget = 0;
+    this.parts = {};
+    this.motion = {};
+    this.glow = null;
 
-    this._basePos = new THREE.Vector3(0.148, -0.132, -0.32);
-    this._adsPos = new THREE.Vector3(0, -0.058, -0.22);
+    this._basePos = new THREE.Vector3(0.136, -0.116, -0.335);
+    // Y is replaced per weapon at equip time from its sight height; the value
+    // here is only what an unbuilt weapon would use.
+    this._adsPos = new THREE.Vector3(0, -0.030, -0.215);
     // Held weapons are canted a few degrees inward and down so the barrel
     // converges on the crosshair instead of pointing off to the right.
     this._baseYaw = 0.055;
@@ -61,7 +69,7 @@ export class Viewmodel {
     this._baseRoll = -0.018;
     // Slightly under scale: at the world camera's 75-degree FOV an unscaled
     // half-metre rifle eats a quarter of the screen at the edge.
-    this.rig.scale.setScalar(0.88);
+    this.rig.scale.setScalar(0.94);
     this._muzzleWorld = new THREE.Vector3();
     this._fwd = new THREE.Vector3();
     this._rayOut = {};
@@ -85,221 +93,50 @@ export class Viewmodel {
     this.spin = 0;
     this.charge = 0;
 
+    // The moving parts, and how far each of them moves.
+    this.parts = g.userData.parts || {};
+    this.motion = g.userData.motion || {};
+    this.glow = g.userData.glow || null;
+    this.cycleT = 1;
+    this.cylTarget = this.parts.cylinder ? this.parts.cylinder.rotation.z : 0;
+    for (const name of ['slide', 'bolt', 'pump', 'mag']) {
+      const part = this.parts[name];
+      if (part) { part.position.set(0, 0, 0); part.rotation.set(0, 0, 0); }
+    }
+
+    // Aiming holds the weapon so its own sighting plane is on the camera axis.
+    // Weapons differ by centimetres here — an AK's rear leaf sits 26 mm higher
+    // than a 1911's notch — and a single shared offset puts one or the other
+    // visibly off the crosshair.
+    this._adsPos.set(
+      0,
+      -(g.userData.sightY ?? 0.020),
+      -clamp(0.12 + (g.userData.rear ?? 0.10), 0.22, 0.40),
+    );
+
     // Muzzle marker sits at the end of the barrel.
     this.muzzle.position.copy(g.userData.muzzle || new THREE.Vector3(0, 0, -0.3));
   }
 
   _build(spec) {
-    const parts = [];
-    const add = (matKey, geo, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0) => {
-      const m = new THREE.Matrix4();
-      const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz, 'XYZ'));
-      m.compose(new THREE.Vector3(x, y, z), q, new THREE.Vector3(1, 1, 1));
-      geo.applyMatrix4(m);
-      parts.push({ matKey, geo });
-    };
-    const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
-    const cyl = (r1, r2, h, seg = 10) => {
-      const g = new THREE.CylinderGeometry(r1, r2, h, seg);
-      g.rotateX(Math.PI / 2);   // point down -Z
-      return g;
-    };
-
-    const t = spec.model.type;
-    let muzzleZ = -0.3;
-
-    switch (t) {
-      case 'knife': {
-        add('gunPolymer', box(0.026, 0.030, 0.11), 0, 0, 0.02);
-        add('chrome', box(0.006, 0.034, spec.model.bladeLen), 0, 0.004, -0.04 - spec.model.bladeLen / 2);
-        add('chrome', box(0.006, 0.012, 0.05), 0, 0.018, -0.05 - spec.model.bladeLen);
-        add('gunmetal', box(0.05, 0.010, 0.012), 0, 0, -0.035);
-        muzzleZ = -0.06 - spec.model.bladeLen;
-        break;
-      }
-
-      case 'pistol': {
-        add('gunmetal', box(0.032, 0.052, 0.20), 0, 0.012, -0.06);          // slide
-        add('gunmetal', box(0.028, 0.026, 0.20), 0, -0.026, -0.06);         // frame
-        add('gunPolymer', box(0.030, 0.088, 0.042), 0, -0.072, 0.030, 0.24); // grip
-        add('gunmetal', box(0.020, 0.014, 0.030), 0, -0.040, -0.012);       // trigger guard
-        add('chrome', cyl(0.008, 0.008, 0.03, 8), 0, 0.012, -0.16);         // barrel
-        add('gunmetal', box(0.006, 0.008, 0.008), 0, 0.040, -0.14);         // front sight
-        add('gunmetal', box(0.018, 0.008, 0.010), 0, 0.040, 0.024);         // rear sight
-        muzzleZ = -0.175;
-        break;
-      }
-
-      case 'revolver': {
-        add('gunmetal', box(0.026, 0.040, 0.10), 0, 0.010, -0.02);
-        add('chrome', cyl(0.026, 0.026, 0.055, 12), 0, 0.008, -0.005);      // cylinder
-        add('chrome', cyl(0.011, 0.011, 0.16, 10), 0, 0.012, -0.13);        // long barrel
-        add('gunmetal', box(0.014, 0.020, 0.15), 0, -0.008, -0.12);         // underlug
-        add('wood', box(0.028, 0.090, 0.044), 0, -0.070, 0.042, 0.30);      // grip
-        add('gunmetal', box(0.006, 0.010, 0.010), 0, 0.032, -0.20);
-        muzzleZ = -0.215;
-        break;
-      }
-
-      case 'smg': {
-        add('gunPolymer', box(0.040, 0.070, 0.26), 0, 0, -0.08);            // receiver
-        add('gunmetal', cyl(0.011, 0.011, 0.13, 8), 0, 0.010, -0.24);       // barrel
-        add('gunPolymer', box(0.030, 0.100, 0.048), 0, -0.078, 0.020, 0.10); // grip
-        add('gunmetal', box(0.030, 0.110, 0.040), 0, -0.070, -0.075, -0.12); // magazine
-        add('gunPolymer', box(0.026, 0.030, 0.11), 0, 0.008, 0.11);         // stock
-        add('gunmetal', box(0.044, 0.014, 0.13), 0, 0.042, -0.10);          // rail
-        add('gunmetal', box(0.008, 0.016, 0.008), 0, 0.056, -0.15);
-        muzzleZ = -0.31;
-        break;
-      }
-
-      case 'rifle': {
-        add('gunmetal', box(0.044, 0.072, 0.30), 0, 0, -0.10);
-        add('wood', box(0.040, 0.048, 0.16), 0, -0.006, -0.26);             // handguard
-        add('gunmetal', cyl(0.010, 0.010, 0.20, 8), 0, 0.012, -0.38);
-        add('gunmetal', cyl(0.016, 0.016, 0.035, 8), 0, 0.012, -0.47);      // brake
-        add('wood', box(0.030, 0.100, 0.050), 0, -0.080, 0.010, 0.12);      // grip
-        add('gunmetal', box(0.034, 0.130, 0.060), 0, -0.088, -0.085, -0.30); // curved mag
-        add('wood', box(0.032, 0.062, 0.17), 0, -0.016, 0.15, -0.06);       // stock
-        add('gunmetal', box(0.010, 0.020, 0.010), 0, 0.052, -0.30);
-        muzzleZ = -0.50;
-        break;
-      }
-
-      case 'shotgun': {
-        add('gunmetal', box(0.042, 0.060, 0.24), 0, 0, -0.06);
-        add('gunmetal', cyl(0.017, 0.017, 0.30, 10), 0, 0.016, -0.30);      // barrel
-        add('gunmetal', cyl(0.012, 0.012, 0.28, 8), 0, -0.014, -0.29);      // tube mag
-        add('gunPolymer', box(0.038, 0.040, 0.10), 0, -0.014, -0.24);       // pump
-        add('gunPolymer', box(0.030, 0.095, 0.048), 0, -0.072, 0.018, 0.14);
-        add('gunPolymer', box(0.034, 0.058, 0.16), 0, -0.024, 0.14, -0.08);
-        add('brass', box(0.008, 0.010, 0.010), 0, 0.046, -0.42);
-        muzzleZ = -0.46;
-        break;
-      }
-
-      case 'sniper': {
-        add('gunPolymer', box(0.044, 0.070, 0.34), 0, 0, -0.10);
-        add('gunmetal', cyl(0.013, 0.013, 0.34, 10), 0, 0.014, -0.44);
-        add('gunmetal', cyl(0.020, 0.020, 0.06, 10), 0, 0.014, -0.62);      // brake
-        add('gunmetal', cyl(0.026, 0.026, 0.20, 12), 0, 0.062, -0.14);      // scope tube
-        add('chrome', cyl(0.030, 0.030, 0.02, 12), 0, 0.062, -0.245);       // objective
-        add('gunmetal', box(0.014, 0.030, 0.014), 0, 0.040, -0.06);         // mounts
-        add('gunmetal', box(0.014, 0.030, 0.014), 0, 0.040, -0.20);
-        add('gunPolymer', box(0.030, 0.100, 0.050), 0, -0.080, 0.010, 0.10);
-        add('gunPolymer', box(0.036, 0.070, 0.20), 0, -0.020, 0.18, -0.05);
-        add('gunmetal', box(0.030, 0.070, 0.040), 0, -0.062, -0.10);        // mag
-        muzzleZ = -0.66;
-        break;
-      }
-
-      case 'lmg': {
-        add('gunmetal', box(0.058, 0.086, 0.32), 0, 0, -0.10);
-        for (let i = 0; i < 6; i++) {
-          const a = (i / 6) * TAU;
-          add('gunmetal', cyl(0.008, 0.008, 0.30, 6),
-            Math.cos(a) * 0.026, 0.012 + Math.sin(a) * 0.026, -0.40);        // barrel cluster
-        }
-        add('gunmetal', cyl(0.042, 0.042, 0.05, 12), 0, 0.012, -0.26);      // spin plate
-        add('rust', box(0.090, 0.090, 0.11), 0.055, -0.055, 0.02);          // ammo drum
-        add('gunPolymer', box(0.032, 0.100, 0.050), 0, -0.084, 0.030, 0.08);
-        add('gunPolymer', box(0.030, 0.060, 0.13), 0, -0.030, 0.16, -0.05);
-        muzzleZ = -0.56;
-        break;
-      }
-
-      case 'flamer': {
-        add('gunmetal', box(0.046, 0.056, 0.22), 0, 0, -0.06);
-        add('steel', cyl(0.014, 0.014, 0.16, 8), 0, 0.010, -0.24);
-        add('rust', cyl(0.026, 0.026, 0.05, 10), 0, 0.010, -0.33);          // nozzle bell
-        add('brass', cyl(0.006, 0.006, 0.09, 6), 0.024, 0.020, -0.28);      // pilot line
-        add('rust', cyl(0.052, 0.052, 0.20, 12), 0.075, -0.030, 0.12);      // fuel tank
-        add('rust', cyl(0.052, 0.052, 0.20, 12), -0.045, -0.040, 0.14);
-        add('gunPolymer', box(0.030, 0.095, 0.048), 0, -0.072, 0.010, 0.12);
-        muzzleZ = -0.37;
-        break;
-      }
-
-      case 'tesla': {
-        add('gunPolymer', box(0.050, 0.066, 0.26), 0, 0, -0.07);
-        add('chrome', cyl(0.014, 0.014, 0.18, 8), 0, 0.014, -0.26);
-        for (let i = 0; i < 3; i++) {
-          add('chrome', cyl(0.030 - i * 0.004, 0.030 - i * 0.004, 0.012, 12),
-            0, 0.014, -0.24 - i * 0.05);                                    // coil rings
-        }
-        add('neonCyan', cyl(0.020, 0.020, 0.10, 10), 0, 0.014, -0.16);      // core
-        add('neonCyan', box(0.014, 0.030, 0.014), 0, 0.050, 0.02);          // charge lamp
-        add('gunPolymer', box(0.030, 0.095, 0.048), 0, -0.074, 0.014, 0.12);
-        add('gunmetal', box(0.036, 0.056, 0.14), 0, -0.024, 0.14, -0.06);
-        muzzleZ = -0.40;
-        break;
-      }
-
-      case 'launcher': {
-        add('gunmetal', box(0.046, 0.056, 0.16), 0, 0, -0.02);
-        add('gunmetal', cyl(0.032, 0.032, 0.26, 12), 0, 0.014, -0.26);      // fat tube
-        add('gunmetal', cyl(0.036, 0.036, 0.03, 12), 0, 0.014, -0.39);
-        add('wood', box(0.038, 0.042, 0.11), 0, -0.010, -0.20);
-        add('gunPolymer', box(0.030, 0.095, 0.048), 0, -0.072, 0.020, 0.14);
-        add('wood', box(0.034, 0.060, 0.16), 0, -0.022, 0.12, -0.08);
-        add('gunmetal', box(0.010, 0.026, 0.010), 0, 0.048, -0.16);
-        muzzleZ = -0.42;
-        break;
-      }
-
-      case 'railgun': {
-        add('gunPolymer', box(0.052, 0.070, 0.30), 0, 0, -0.08);
-        // Twin rails with a gap between them — the whole point of the thing.
-        add('chrome', box(0.010, 0.016, 0.40), 0.020, 0.018, -0.36);
-        add('chrome', box(0.010, 0.016, 0.40), -0.020, 0.018, -0.36);
-        add('gunmetal', box(0.056, 0.014, 0.10), 0, 0.040, -0.22);
-        add('neonCyan', box(0.024, 0.008, 0.34), 0, 0.018, -0.34);          // arc channel
-        add('gunmetal', cyl(0.034, 0.034, 0.08, 12), 0, 0.010, -0.18);      // capacitor
-        add('neonCyan', cyl(0.016, 0.016, 0.09, 10), 0.038, -0.010, -0.10);
-        add('gunPolymer', box(0.032, 0.100, 0.050), 0, -0.080, 0.014, 0.10);
-        add('gunPolymer', box(0.036, 0.066, 0.18), 0, -0.022, 0.16, -0.05);
-        muzzleZ = -0.58;
-        break;
-      }
-
-      default: {
-        add('gunmetal', box(0.05, 0.06, 0.3), 0, 0, -0.1);
-        muzzleZ = -0.28;
-      }
-    }
-
-    // Merge per material: three or four draws for the whole weapon.
-    const byMat = new Map();
-    for (const p of parts) {
-      if (!byMat.has(p.matKey)) byMat.set(p.matKey, []);
-      byMat.get(p.matKey).push(p.geo);
-    }
-
-    const group = new THREE.Group();
-    group.name = `weapon:${spec.id}`;
-    for (const [matKey, geos] of byMat) {
-      const mat = this.mats.get(matKey) || this.mats.get('gunmetal');
-      const merged = mergeGeometries(geos, false);
-      for (const g of geos) g.dispose();
-      if (!merged) continue;
-      const mesh = new THREE.Mesh(merged, mat);
-      mesh.castShadow = false;
-      mesh.receiveShadow = false;
-      mesh.frustumCulled = false;
-      group.add(mesh);
-    }
-
-    group.userData.muzzle = new THREE.Vector3(0, 0.012, muzzleZ);
-    group.userData.spec = spec;
-    return group;
+    return buildWeapon(spec, this.mats);
   }
+
 
   // ------------------------------------------------------------- animation
 
-  /** Fire kick. `power` scales with the weapon's recoil. */
+  /**
+   * Fire kick. `power` scales with the weapon's recoil.
+   *
+   * This also cycles the action: the slide runs back and returns, the pump
+   * strokes, the cylinder indexes to the next chamber. A gun whose mechanism
+   * does not move when it fires reads as a prop, however well modelled.
+   */
   punch(power = 1) {
     this._kickVel -= 3.4 * power;
     this._kickPitchVel -= 7.0 * power;
+    this.cycleT = 0;
+    if (this.motion.cylinder) this.cylTarget -= this.motion.cylinder.step;
   }
 
   startReload(duration) {
@@ -386,23 +223,77 @@ export class Viewmodel {
       this._baseYaw * cant - this.swayX * 3.0 + this._sprint * 0.5,
       this._baseRoll * cant + reloadRoll + this._sprint * 0.45 - this.swayX * 1.5,
     );
-    this.rig.scale.setScalar(lerp(0.88, 1.0, adsAmount));
+    this.rig.scale.setScalar(lerp(0.94, 1.0, adsAmount));
 
-    // Minigun barrels keep spinning while the trigger is held.
-    if (this.spinRate > 0.001 && this.current) {
-      this.spin += this.spinRate * dt;
-      this.current.rotation.z = this.spin;
-    } else if (this.current && this.current.rotation.z !== 0) {
-      this.current.rotation.z = damp(this.current.rotation.z, 0, 6, dt);
+    if (this.current) this._animateParts(dt, adsAmount);
+  }
+
+  // ---------------------------------------------------------- moving parts
+
+  /**
+   * Drive the sub-groups the gunsmith left animatable. Everything here is
+   * driven off state the viewmodel already tracks — the fire cycle, the reload
+   * clock, the spin rate, the charge — so no weapon needs a special case here
+   * or a call site of its own.
+   */
+  _animateParts(dt, adsAmount) {
+    const p = this.parts, m = this.motion;
+
+    // Fire cycle: back fast, forward slower, which is what an action does.
+    const recip = m.slide || m.bolt || m.pump;
+    if (recip) {
+      this.cycleT = Math.min(1, this.cycleT + dt / recip.time);
+      const t = this.cycleT;
+      const k = t >= 1 ? 0 : t < 0.4 ? t / 0.4 : 1 - (t - 0.4) / 0.6;
+      const part = p.slide || p.bolt || p.pump;
+      if (part) part.position.z = k * recip.travel;
     }
 
-    // Charge glow on the energy weapons.
-    if (this.current && this.charge > 0.001) {
-      const s = 1 + this.charge * 0.06;
-      this.current.scale.set(1, 1, s);
-    } else if (this.current) {
-      this.current.scale.set(1, 1, 1);
+    // Revolver: the cylinder springs round to the next chamber and stops.
+    if (p.cylinder) {
+      p.cylinder.rotation.z = damp(p.cylinder.rotation.z, this.cylTarget, 14, dt);
     }
+
+    // Minigun: only the barrel cluster turns, not the whole weapon.
+    if (p.spin) {
+      if (this.spinRate > 0.001) {
+        this.spin += this.spinRate * dt;
+        p.spin.rotation.z = this.spin;
+      } else if (p.spin.rotation.z !== 0) {
+        p.spin.rotation.z = damp(p.spin.rotation.z, 0, 6, dt);
+      }
+    }
+
+    // Reload: the magazine falls clear, a fresh one goes up, the action closes.
+    if (p.mag && (m.magDrop || m.magForward)) {
+      let drop = 0;
+      if (this.reloadDur > 0) {
+        const t = clamp(this.reloadT / this.reloadDur, 0, 1);
+        drop = t < 0.30 ? t / 0.30
+             : t < 0.58 ? 1
+             : t < 0.86 ? 1 - (t - 0.58) / 0.28
+             : 0;
+      }
+      p.mag.position.y = -(m.magDrop || 0) * drop;
+      p.mag.position.z = (m.magForward || 0) * drop;
+      p.mag.rotation.z = 0.55 * drop * (m.magDrop ? 1 : 0);
+      // Bolt release: the action slams shut as the reload finishes.
+      const closer = p.slide || p.bolt;
+      if (closer && this.reloadDur > 0) {
+        const t = clamp(this.reloadT / this.reloadDur, 0, 1);
+        if (t > 0.86) closer.position.z = (1 - (t - 0.86) / 0.14) * (recip ? recip.travel : 0.02);
+      }
+    }
+
+    // Energy weapons: the core brightens and swells as the shot charges.
+    if (p.core) {
+      const k = 0.35 + this.charge * 0.65;
+      p.core.scale.set(1, 1, 1 + this.charge * 0.05);
+      if (this.glow) this.glow.opacity = k;
+    }
+    // A scope reticle is only lit when you are actually behind the glass.
+    if (p.reticle) p.reticle.visible = adsAmount > 0.45;
+    if (p.pilot && this.glow) this.glow.opacity = 0.55 + Math.sin(performance.now() * 0.02) * 0.15;
   }
 
   dispose() {

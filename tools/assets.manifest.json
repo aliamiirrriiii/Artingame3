@@ -2,7 +2,8 @@
   "note": "Every runtime asset used by NIGHT OF THE RISEN is downloaded from the web by tools/fetch-assets.mjs. Sources are permissively licensed (three.js examples asset pool: MIT / CC0 / CC-BY as noted per entry).",
   "bases": {
     "three": "https://raw.githubusercontent.com/mrdoob/three.js/r180/examples",
-    "khronos": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models"
+    "khronos": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models",
+    "gfonts": "https://raw.githubusercontent.com/google/fonts/main/ofl"
   },
   "assets": [
     {
@@ -214,6 +215,36 @@
       "dst": "assets/sounds/ambience.ogg",
       "license": "CC-BY (three.js example asset)",
       "use": "Low ambient drone bed under procedural audio"
+    },
+    {
+      "src": "gfonts:barlowcondensed/BarlowCondensed-Medium.ttf",
+      "dst": "assets/fonts/BarlowCondensed-Medium.ttf",
+      "license": "SIL Open Font License 1.1 — Barlow (c) 2017 The Barlow Project Authors (Jeremy Tribby)",
+      "use": "HUD labels and menu body text."
+    },
+    {
+      "src": "gfonts:barlowcondensed/BarlowCondensed-Bold.ttf",
+      "dst": "assets/fonts/BarlowCondensed-Bold.ttf",
+      "license": "SIL Open Font License 1.1 — Barlow (c) 2017 The Barlow Project Authors (Jeremy Tribby)",
+      "use": "Titles, wave numbers and menu headings."
+    },
+    {
+      "src": "gfonts:barlowsemicondensed/BarlowSemiCondensed-Medium.ttf",
+      "dst": "assets/fonts/BarlowSemiCondensed-Medium.ttf",
+      "license": "SIL Open Font License 1.1 — Barlow (c) 2017 The Barlow Project Authors (Jeremy Tribby)",
+      "use": "Readouts and paragraph text."
+    },
+    {
+      "src": "gfonts:barlowsemicondensed/BarlowSemiCondensed-SemiBold.ttf",
+      "dst": "assets/fonts/BarlowSemiCondensed-SemiBold.ttf",
+      "license": "SIL Open Font License 1.1 — Barlow (c) 2017 The Barlow Project Authors (Jeremy Tribby)",
+      "use": "Ammo counter and other tabular figures."
+    },
+    {
+      "src": "gfonts:barlowcondensed/OFL.txt",
+      "dst": "assets/fonts/OFL.txt",
+      "license": "SIL Open Font License 1.1 — Barlow (c) 2017 The Barlow Project Authors (Jeremy Tribby)",
+      "use": "Font licence text, shipped alongside the faces as the OFL requires."
     }
   ]
 }

@@ -124,11 +124,24 @@ Twelve weapons, each built to solve a problem the others do not.
 | 💣 | M79 Thumper | One shell, one crowd |
 | ☄️ | Ferro Lance | Charge, release, erase a lane |
 
-Weapons are **procedural** — assembled from primitives and merged per material,
-three or four draw calls each — and they live in the main scene parented to the
-camera, so they take the world's light, the muzzle flash, the bloom and the
-grade. A gun rendered in its own pass always looks pasted on. The trade is wall
-clipping, handled by pulling the weapon back when something solid is close.
+Weapons are built by a **gunsmith** (`src/weapons/gunsmith.js`) rather than
+modelled: each is assembled from bevelled slabs, revolved barrels with real
+crowns and visible bores, knurled turrets, slotted Picatinny rails and open
+trigger guards, then merged per material — five to ten thousand triangles and a
+handful of draw calls each. Edge wear is baked to vertex colours by finding the
+vertices near two extremes of a part's bounding box, which is exactly where a
+holster rubs the finish off a real one.
+
+Actions move. Slides and bolts reciprocate on the shot, the revolver's cylinder
+indexes, the pump strokes, magazines drop clear and a fresh one goes up, the
+minigun's rotor spins. Aiming holds each weapon at *its own* sight height, so
+the irons land on the crosshair instead of near it, and far enough forward that
+a rifle's buttstock is not six centimetres from your eye.
+
+They live in the main scene parented to the camera, so they take the world's
+light, the muzzle flash, the bloom and the grade. A gun rendered in its own pass
+always looks pasted on. The trade is wall clipping, handled by pulling the
+weapon back when something solid is close.
 
 ### The horde
 
@@ -366,7 +379,7 @@ src/
   render/    renderer + post chain, night sky, final grade, particles/decals/gore
   world/     PBR material library, arena generator, collision + flow-field nav
   entities/  player controller, zombie manager, archetype table
-  weapons/   arsenal data, procedural viewmodels, combat resolution
+  weapons/   arsenal data, the gunsmith, viewmodel rig, combat resolution
   game/      wave director + power-ups, economy/perks/mystery box
   ui/        HUD
 tools/       asset manifest + downloader, headless + touch test harnesses
@@ -379,11 +392,23 @@ vendor/      three.js r180 (build + addons), vendored so there is no install ste
 Two layers, both runnable from a clean checkout:
 
 ```bash
-npm test        # 22 logic tests — no browser, no GPU, runs in under a second
-npm run smoke   # boot, load assets, build the level, render, report timings
-npm run touch   # 18 touch-control checks in a landscape phone viewport
+npm test           # 22 logic tests — no browser, no GPU, runs in under a second
+npm run smoke      # boot, load assets, build the level, render, report timings
+npm run touch      # 21 touch-control checks in a landscape phone viewport
+npm run guns       # render all twelve weapons side by side to guns.png
+npm run guns:anim  # drive every weapon's action through the real viewmodel
+npm run ads        # look down a weapon's sights with a reticle drawn over it
 node tools/smoke.mjs --page index.html --bot --run 60   # play it with a bot
 ```
+
+`npm run guns` and `npm run ads` exist because a triangle count cannot tell you
+that a barrel is floating twenty centimetres in front of its receiver, that a
+fuel tank is standing on end, or that a dust cover sits exactly level with the
+rear sight and blinds you the moment you aim. Every one of those was found by
+looking at the render, and none of them by reading the code. `npm run guns:anim`
+is the counterpart for the parts that move: it equips all twelve weapons through
+the real viewmodel, fires, reloads, spins and charges each one, and fails if a
+slide, bolt, pump, cylinder or magazine never actually moved.
 
 `npm run touch` drives the game with **real touch events through the DevTools
 Protocol** — not synthesised DOM events — and asserts that each control moves

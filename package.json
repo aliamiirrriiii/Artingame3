@@ -2,7 +2,7 @@
   "name": "night-of-the-risen",
   "version": "1.0.0",
   "private": true,
-  "description": "A wave-survival zombie shooter running in the browser on WebGL2 — physically based night rendering, flow-field horde AI, and a 12-weapon arsenal.",
+  "description": "A wave-survival zombie shooter running in the browser on WebGL2 \u2014 physically based night rendering, flow-field horde AI, and a 12-weapon arsenal.",
   "type": "module",
   "scripts": {
     "start": "node serve.mjs",
@@ -13,7 +13,10 @@
     "touch": "node tools/touchtest.mjs",
     "apk": "cd android && ./gradlew assembleDebug",
     "verify:apk": "node tools/verify-apk.mjs",
-    "models": "node tools/smoke.mjs --page tools/modelpreview.html --viewport 1280x420 --shot models.png"
+    "models": "node tools/smoke.mjs --page tools/modelpreview.html --viewport 1280x420 --shot models.png",
+    "guns": "node tools/smoke.mjs --page tools/gunpreview.html --viewport 1600x900 --shot guns.png",
+    "guns:anim": "node tools/smoke.mjs --page tools/gunpreview.html --viewport 800x500 --params anim=1",
+    "ads": "node tools/smoke.mjs --page tools/gunpreview.html --viewport 900x600 --params ads=rifle --shot ads.png"
   },
   "engines": {
     "node": ">=18"

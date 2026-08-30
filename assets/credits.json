@@ -76,6 +76,16 @@
         "textures/wood_bump.jpg",
         "textures/wood_rough.jpg"
       ]
+    },
+    {
+      "license": "SIL Open Font License 1.1 — Barlow (c) 2017 The Barlow Project Authors (Jeremy Tribby)",
+      "files": [
+        "fonts/BarlowCondensed-Bold.ttf",
+        "fonts/BarlowCondensed-Medium.ttf",
+        "fonts/BarlowSemiCondensed-Medium.ttf",
+        "fonts/BarlowSemiCondensed-SemiBold.ttf",
+        "fonts/OFL.txt"
+      ]
     }
   ]
 }
