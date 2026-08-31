@@ -1007,7 +1007,12 @@ export function buildWeapon(spec, mats) {
     // Carried like the scanned props: cocked, up and across, out of the sight
     // line. A blade held down the view axis is a line and nothing else.
     group.userData.melee = true;
-    group.rotation.set(...(spec.model.rest || [0.86, -0.62, 0.16]));
+    group.userData.gripAxis = [0, 0, 1];
+    // Melee weapons are carried lower and further out than a gun is.
+    group.userData.basePos = spec.model.basePos || [0.20, -0.34, -0.44];
+    group.userData.adsPos = spec.model.adsPos || [0.15, -0.30, -0.50];
+    // Same carry as the scanned props; see MELEE_REST in viewmodels.js.
+    group.rotation.set(...(spec.model.rest || [-0.40, 0, 0]));
     group.userData.rest = group.rotation.clone();
     group.userData.tip = new THREE.Vector3(0, 0, muzzleZ);
   }

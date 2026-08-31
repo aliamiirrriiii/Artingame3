@@ -176,6 +176,41 @@ try {
   };
 
   /**
+   * How far the fist is from the weapon it is supposed to be holding, in
+   * metres: the distance from the centre of the closed hand to the nearest
+   * point on the weapon's surface.
+   *
+   * This is the question "is it actually gripping it", asked in a way that
+   * does not depend on somebody looking at a render. A hand a centimetre off
+   * a bat handle is a hand on a bat; a hand fifteen centimetres off a sign is
+   * a hand holding nothing, and no amount of squinting at a screenshot makes
+   * that reliable to catch.
+   */
+  const gripGap = (g) => {
+    const h = g && g.userData.hands;
+    if (!h) return null;
+    g.updateMatrixWorld(true);
+    const b = {};
+    h.traverse((o) => { if (o.name) b[o.name] = o; });
+    if (!b.r_middle_low || !b.r_middle_tip) return null;
+    const fist = new THREE.Vector3().setFromMatrixPosition(b.r_middle_low.matrixWorld)
+      .lerp(new THREE.Vector3().setFromMatrixPosition(b.r_middle_tip.matrixWorld), 0.5);
+
+    const v = new THREE.Vector3();
+    let best = Infinity;
+    (g.userData.parts.body || g).traverse((o) => {
+      if (!o.isMesh) return;
+      const pos = o.geometry.attributes.position;
+      for (let i = 0; i < pos.count; i++) {
+        v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+        const d = v.distanceToSquared(fist);
+        if (d < best) best = d;
+      }
+    });
+    return +Math.sqrt(best).toFixed(4);
+  };
+
+  /**
    * How far the trigger palm ended up from the grip it was fitted to, in
    * metres. This is the invariant the whole fit rests on, and the only check
    * that catches a hands template cloned out of an already-scaled source
@@ -196,8 +231,16 @@ try {
     const b = {};
     h.traverse((o) => { if (o.name) b[o.name] = o; });
     if (!b.r_wrist || !b.r_middle_low) return null;
-    const p = new THREE.Vector3().setFromMatrixPosition(b.r_wrist.matrixWorld)
-      .lerp(new THREE.Vector3().setFromMatrixPosition(b.r_middle_low.matrixWorld), 0.5);
+    // Measure whichever anchor the fit actually used: a weapon that says which
+    // way it runs is held in a closed fist and anchored on the channel through
+    // it; everything else is placed by the palm. Comparing the palm against a
+    // fit made on the fist reports a constant 38 mm error on every melee
+    // weapon, which is the distance between the two and not a defect.
+    const closed = !!g.userData.gripAxis;
+    const other = closed ? b.r_middle_tip : b.r_wrist;
+    if (!other) return null;
+    const p = new THREE.Vector3().setFromMatrixPosition(b.r_middle_low.matrixWorld)
+      .lerp(new THREE.Vector3().setFromMatrixPosition(other.matrixWorld), 0.5);
     return +g.worldToLocal(p).distanceTo(pts.grip).toFixed(4);
   };
 
@@ -343,6 +386,36 @@ try {
   }
 
   /*
+   * What the hand rig actually measures. Fitting a fist to a weapon comes
+   * down to three things — where the held object's axis passes through the
+   * fist, which way it runs, and how big the fist is — and all three are
+   * properties of the asset rather than numbers anyone should be guessing.
+   *
+   *   ?rig=1
+   */
+  if (q.get('rig') === '1') {
+    const tpl = handsTemplate(assets);
+    if (!tpl) { report.errors.push('hands template did not load'); report.done = true; return; }
+    const r3 = (v) => v.toArray().map((n) => +n.toFixed(4));
+    const at = (n) => {
+      const b = tpl.bones[n];
+      if (!b) return null;
+      b.updateWorldMatrix(true, false);
+      return r3(new THREE.Vector3().setFromMatrixPosition(b.matrixWorld));
+    };
+    const names = ['r_wrist', 'r_middle_low', 'r_middle_mid', 'r_middle_tip',
+      'r_index_low', 'r_index_mid', 'r_index_tip', 'r_pinky_low', 'r_pinky_tip',
+      'r_thumb_low', 'r_thumb_mid', 'r_thumb_tip', 'r_forearm', 'r_upperarm'];
+    report.rig = { scale: 0.266, bones: {} };
+    for (const n of names) report.rig.bones[n] = at(n);
+    report.rig.palmR = r3(tpl.palmR);
+    report.rig.wrapR = tpl.wrapR ? r3(tpl.wrapR) : null;
+    report.ok = report.errors.length === 0;
+    report.done = true;
+    return;
+  }
+
+  /*
    * Rest-pose contact sheet. A melee weapon is not aimed, so where it sits is
    * two free angles and a position, and each guess costs a render. This draws
    * twelve first-person views into one frame through the scissor rectangle —
@@ -360,8 +433,15 @@ try {
     const tpl = handsTemplate(assets);
     const base = (q.get('px') ? q.get('px').split(',').map(Number) : null);
     const rz = Number(q.get('rz') ?? 0.15);
-    const RX = many ? [0] : (q.get('rxs') || '0.5,0.85,1.2').split(',').map(Number);
-    const RY = many ? ids.map((_, i) => i) : (q.get('rys') || '-0.15,-0.45,-0.75,-1.05').split(',').map(Number);
+    // Three ways to fill the sheet: many weapons at one pose, one weapon at
+    // many rest rotations, or — with ?rolls= — one weapon spun about the axis
+    // it is held on, which is the only free parameter left once the fist is
+    // closed on it.
+    const ROLLS = q.get('rolls') ? q.get('rolls').split(',').map(Number) : null;
+    const RX = (many || ROLLS) ? [0] : (q.get('rxs') || '0.5,0.85,1.2').split(',').map(Number);
+    const RY = many ? ids.map((_, i) => i)
+      : ROLLS ? ROLLS
+      : (q.get('rys') || '-0.15,-0.45,-0.75,-1.05').split(',').map(Number);
 
     const cam = new THREE.PerspectiveCamera(75, (W / RY.length) / (H / RX.length), 0.01, 40);
     // Pull the eye back to see where the weapon actually is. At the real eye
@@ -379,8 +459,8 @@ try {
         const cfg = MODEL_VIEWMODELS[spec.model.type];
         const g = (cfg && (cfg.adopt ? buildAdoptedWeapon(spec, cfg, assets, mats)
           : buildModelWeapon(spec, cfg, assets))) || buildWeapon(spec, mats);
-        attachHands(g, spec, tpl);
-        if (!many) g.rotation.set(RX[r], RY[c], rz);
+        attachHands(g, spec, tpl, ROLLS ? { gripRoll: ROLLS[c] } : {});
+        if (!many && !ROLLS) g.rotation.set(RX[r], RY[c], rz);
         const rig = new THREE.Group();
         rig.add(g);
         rig.scale.setScalar(0.94);
@@ -400,8 +480,35 @@ try {
         // nothing rather than like anything obviously broken.
         rig.updateMatrixWorld(true);
         const bb = new THREE.Box3().setFromObject(g.userData.parts.body);
-        const held = { id: spec.id, min: bb.min.toArray().map((v) => +v.toFixed(3)),
+        const gap = gripGap(g);
+        // How far the weapon's own grip origin is from its own surface. If
+        // this is large the fit was never going to work: the point the hand
+        // is aimed at is not on the object.
+        let originGap = Infinity;
+        {
+          const v = new THREE.Vector3();
+          const inv = new THREE.Matrix4().copy(g.matrixWorld).invert();
+          const m = new THREE.Matrix4();
+          g.updateMatrixWorld(true);
+          (g.userData.parts.body || g).traverse((o) => {
+            if (!o.isMesh) return;
+            m.multiplyMatrices(inv, o.matrixWorld);
+            const pos = o.geometry.attributes.position;
+            for (let i = 0; i < pos.count; i++) {
+              v.fromBufferAttribute(pos, i).applyMatrix4(m);
+              const d = v.lengthSq();
+              if (d < originGap) originGap = d;
+            }
+          });
+          originGap = +Math.sqrt(originGap).toFixed(4);
+        }
+        const held = { id: spec.id, gap, originGap,
+          min: bb.min.toArray().map((v) => +v.toFixed(3)),
           max: bb.max.toArray().map((v) => +v.toFixed(3)) };
+        // A fist further than this from the weapon is not holding it.
+        if (gap !== null && gap > 0.045) {
+          report.errors.push(`${spec.id}: fist is ${gap}m off the weapon`);
+        }
         report.weapons.push(held);
         if (bb.max.z > -0.05) report.errors.push(`${spec.id}: held behind the eye (z up to ${held.max[2]})`);
         if (bb.min.z < -2.0) report.errors.push(`${spec.id}: reaches ${(-bb.min.z).toFixed(2)}m in front of the eye`);
@@ -423,7 +530,9 @@ try {
         scene.remove(rig);
 
         const t = document.createElement('div');
-        t.innerHTML = many ? `<b>${spec.short}</b>` : `<b>${RX[r].toFixed(2)} / ${RY[c].toFixed(2)}</b>`;
+        t.innerHTML = many ? `<b>${spec.short}</b>`
+          : ROLLS ? `<b>roll ${ROLLS[c].toFixed(2)}</b>`
+          : `<b>${RX[r].toFixed(2)} / ${RY[c].toFixed(2)}</b>`;
         t.style.left = `${((c + 0.5) / RY.length) * 100}%`;
         t.style.top = `${((r + 0.06) / RX.length) * 100}%`;
         tags.appendChild(t);
@@ -449,8 +558,10 @@ try {
     if (q.get('vo')) cfg.offset = q.get('vo').split(',').map(Number);
     const g = (cfg.asset && (cfg.adopt ? buildAdoptedWeapon(WEAPONS[vm], cfg, assets, mats)
       : buildModelWeapon(WEAPONS[vm], cfg, assets))) || buildWeapon(WEAPONS[vm], mats);
-    if (q.get('nohands') !== '1') attachHands(g, WEAPONS[vm], handsTemplate(assets),
-      { bias: q.get('hb') ? q.get('hb').split(',').map(Number) : null });
+    if (q.get('nohands') !== '1') attachHands(g, WEAPONS[vm], handsTemplate(assets), {
+      bias: q.get('hb') ? q.get('hb').split(',').map(Number) : null,
+      gripRoll: q.get('gr') !== null ? Number(q.get('gr')) : null,
+    });
     const rig = new THREE.Group();
     rig.add(g);
     rig.scale.setScalar(0.94);

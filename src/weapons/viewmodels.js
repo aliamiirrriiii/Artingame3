@@ -24,6 +24,18 @@ import * as THREE from 'three';
  *   Told where its muzzle and its sight line are. Those come off the mesh for a
  *   built weapon; here they are measured once and written down.
  */
+/*
+ * Where an improvised weapon is carried, and how it is angled there.
+ *
+ * One set of numbers for all of them, because the hand decides the rest: the
+ * weapon is laid through the fist by `attachHands`, so its direction on screen
+ * comes out of the authored grip rather than out of a per-weapon guess. All
+ * that is left is where the hands sit and a small forward lean.
+ */
+const MELEE_HIP = [0.20, -0.34, -0.44];
+const MELEE_AIM = [0.15, -0.30, -0.50];
+const MELEE_REST = [-0.40, 0, 0];
+
 export const MODEL_VIEWMODELS = {
   /*
    * Adopted from the Steel Tide / Quaternius pack. `adopt` sends these down the
@@ -74,42 +86,41 @@ export const MODEL_VIEWMODELS = {
     adopt: true, melee: true, asset: 'meleeBat',
     scale: 1,
     gripInset: 0.10,
-    basePos: [0.20, -0.30, -0.34], adsPos: [0.16, -0.26, -0.40],
+    basePos: MELEE_HIP, adsPos: MELEE_AIM,
   },
 
   pan: {
     adopt: true, melee: true, asset: 'meleePan',
     scale: 1,
     gripInset: 0.06,
-    basePos: [0.22, -0.28, -0.32], adsPos: [0.17, -0.24, -0.38],
+    basePos: MELEE_HIP, adsPos: MELEE_AIM,
   },
 
   drill: {
     adopt: true, melee: true, asset: 'meleeDrill',
+    // A power tool with a pistol grip: held like a pistol, not like a shaft,
+    // and carried where a pistol is carried rather than down at a bat's height.
+    gripAxis: false,
+    rest: [0, 0, 0],
+    basePos: [0.16, -0.17, -0.30], adsPos: [0.10, -0.14, -0.34],
     // Modelled upright with the body along X: turn the body forward and stand
     // the grip under it.
     scale: 1, rotation: [0, Math.PI / 2, 0],
     gripInset: 0.05,
-    basePos: [0.20, -0.22, -0.34], adsPos: [0.14, -0.20, -0.40],
   },
 
   sign: {
     adopt: true, melee: true, asset: 'meleeSign',
     scale: 1,
     gripInset: 0.08,
-    // Longer weapons need a shallower carry angle or they swing clean off the
-    // right of the screen: the rest rotation pivots about the hand, so the
-    // further the tip is from it the further sideways it travels.
-    rest: [0.86, -0.42, 0.16],
-    basePos: [0.16, -0.30, -0.32], adsPos: [0.13, -0.26, -0.38],
+    basePos: MELEE_HIP, adsPos: MELEE_AIM,
   },
 
   ukulele: {
     adopt: true, melee: true, asset: 'meleeUkulele',
     scale: 1,
     gripInset: 0.08,
-    rest: [0.88, -0.55, 0.16],
-    basePos: [0.18, -0.28, -0.32], adsPos: [0.14, -0.24, -0.38],
+    basePos: MELEE_HIP, adsPos: MELEE_AIM,
   },
 
   rifle: {
@@ -515,27 +526,37 @@ export function buildAdoptedWeapon(spec, cfg, assets, mats) {
   const centre = box.getCenter(new THREE.Vector3());
   const sightY = cfg.sightY ?? 0.02;
   if (cfg.melee) {
-    // Held in a fist rather than shouldered: the origin sits on the grip, a
-    // little way in from the butt end, and the tool hangs forward from it.
-    //
-    // Which end the grip is on is measured, not declared. Every one of these
-    // props was modelled facing whichever way its author felt like, and
-    // getting it backwards does not look wrong — it puts the whole weapon
-    // behind the camera, so all you see is a hand holding nothing.
+    /*
+     * Held in a fist rather than shouldered: the origin sits on the grip, a
+     * little way in from the butt end, and the tool hangs forward from it.
+     *
+     * Which end the grip is on is measured, not declared. Every one of these
+     * props was modelled facing whichever way its author felt like, and
+     * getting it backwards does not look wrong — it puts the whole weapon
+     * behind the camera, so all you see is a hand holding nothing.
+     *
+     * When it is backwards the object is turned end for end and then measured
+     * again from scratch. An earlier version turned it and compensated by
+     * negating two components of the offset, which is only correct when the
+     * half-turn commutes with the rotation already applied — true for anything
+     * modelled along Z, false for everything stood up in Y, and the two props
+     * in that second group ended up with their grip half a metre off their own
+     * surface. Re-measuring cannot be wrong.
+     */
+    const inset = cfg.gripInset ?? 0.10;
     const back = cfg.gripEnd ? cfg.gripEnd === 'max' : thinEndIsMax(src, box);
-    const gz = back ? box.max.z - (cfg.gripInset ?? 0.10) : box.min.z + (cfg.gripInset ?? 0.10);
+    if (!back) {
+      src.rotation.y += Math.PI;
+      src.updateMatrixWorld(true);
+      box.setFromObject(src);
+    }
+    const gz = box.max.z - inset;
     // Across the grip, centre on what is actually there at that station rather
     // than on the object as a whole. A bat is a rod on its own centre line and
     // the two agree; a chair is held by a leg, and centring the chair puts the
     // hand in the air a foot from the leg it is supposed to be holding.
     const gc = sectionCentre(src, gz, Math.max(0.03, (box.max.z - box.min.z) * 0.10));
     src.position.set(-gc.x, -gc.y, -gz);
-    // The tool has to hang forward, down -Z, whichever end the handle was on.
-    if (!back) {
-      src.rotation.y += Math.PI;
-      src.position.x = -src.position.x;
-      src.position.z = -src.position.z;
-    }
   } else {
     src.position.set(-centre.x, -box.max.y + sightY, -box.max.z);
   }
@@ -555,6 +576,11 @@ export function buildAdoptedWeapon(spec, cfg, assets, mats) {
     // The hands rig fits the trigger palm to this point. For a melee weapon
     // that is the origin itself, because the origin was just put on the grip.
     group.userData.grip = { x: 0, y: 0, z: 0 };
+    // The shaft runs down the view axis through the fist, so that is what the
+    // hand has to close around. A weapon that is not a shaft — the drill,
+    // which has a pistol grip like every gun in the game — says so and is
+    // held the way the guns are.
+    if (cfg.gripAxis !== false) group.userData.gripAxis = cfg.gripAxis || [0, 0, 1];
     group.userData.melee = true;
     /*
      * The ready stance, baked into the weapon rather than the rig.
@@ -565,7 +591,7 @@ export function buildAdoptedWeapon(spec, cfg, assets, mats) {
      * strong side, out of the sight line — so that the swing has somewhere to
      * come from and you can still see what you are hitting.
      */
-    group.rotation.set(...(cfg.rest || [0.90, -0.75, 0.18]));
+    group.rotation.set(...(cfg.rest || MELEE_REST));
     group.userData.rest = group.rotation.clone();
     // Where the business end is, for impact effects and for the reach the
     // swing actually has.

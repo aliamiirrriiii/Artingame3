@@ -34,6 +34,16 @@ import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 /** Metres per model unit — the same figure the Galil viewmodel is built at. */
 const HAND_SCALE = 0.266;
 
+/**
+ * How far the fist is rolled around what it is holding.
+ *
+ * Aligning the knuckle line with the weapon's shaft leaves one degree of
+ * freedom — the spin about that shaft — and the minimal rotation lands on the
+ * wrong side of it, fingers under the handle rather than closed over it. Half
+ * a turn puts the knuckles where a batter's are.
+ */
+const MELEE_ROLL = Math.PI;
+
 /** Natural palm-to-palm distance in the authored pose, in metres. */
 export const NATURAL_SPAN = 0.235;
 
@@ -88,11 +98,15 @@ const FIT = {
   // wet-floor sign at two points a foot apart, a drill in one hand — the span
   // is most of what tells one hold from another.
   bat:      { span: 0.135 },
+  // Two of these are flat rather than round, and the roll about the shaft
+  // decides whether you are looking at a blade or at a line. A machete turned
+  // edge-on to the camera is invisible; a wet-floor sign turned face-on is a
+  // wall across half the screen.
+  machete:  { span: 0.090, gripRoll: 1.57 },
+  sign:     { span: 0.300, gripRoll: 4.71 },
   pan:      { span: 0.105 },
   drill:    { oneHanded: true },
-  sign:     { span: 0.300 },
   ukulele:  { span: 0.260 },
-  machete:  { span: 0.090 },
   axe:      { span: 0.230 },
   sledge:   { span: 0.260 },
 };
@@ -149,6 +163,26 @@ export function handsTemplate(assets) {
     palmR: palm(bones.r_wrist, bones.r_middle_low),
     palmL: palm(bones.l_wrist, bones.l_middle_low),
     poleL: bones.l_pole ? worldPos(bones.l_pole) : null,
+    /*
+     * The fist, measured rather than guessed.
+     *
+     * `gripR` is where a held object's axis actually passes through the hand:
+     * midway between the middle knuckle and the middle fingertip, which is the
+     * channel between the curled fingers and the palm. That is 27 mm from
+     * `palmR` — which sits back toward the wrist — and 27 mm is the difference
+     * between a fist closed on a bat and a hand with a bat through the back of
+     * it.
+     *
+     * `wrapR` is the direction that object runs: across the knuckles, index to
+     * pinky. The index finger is no use for this one; it is on a trigger, not
+     * wrapped round anything.
+     */
+    gripR: (bones.r_middle_low && bones.r_middle_tip)
+      ? worldPos(bones.r_middle_low).lerp(worldPos(bones.r_middle_tip), 0.5)
+      : null,
+    wrapR: (bones.r_index_low && bones.r_pinky_low)
+      ? worldPos(bones.r_pinky_low).sub(worldPos(bones.r_index_low)).normalize()
+      : null,
   };
 }
 
@@ -172,6 +206,7 @@ export function attachHands(group, spec, template, opts = {}) {
   const type = spec?.model?.type || 'pistol';
   const fit = { ...(FIT[type] || {}) };
   if (opts.pole) fit.pole = opts.pole;
+  if (opts.gripRoll !== undefined && opts.gripRoll !== null) fit.gripRoll = opts.gripRoll;
 
   // Measure the weapon before the arms are in it.
   const bounds = new THREE.Box3().setFromObject(group);
@@ -200,13 +235,64 @@ export function attachHands(group, spec, template, opts = {}) {
   // Scale to metres and slide the rig so the trigger palm lands on the grip.
   const holder = new THREE.Group();
   holder.name = 'hands';
+  const axis = group.userData.gripAxis || fit.gripAxis;
+  // A weapon that says which way it runs is held in a closed fist, and the
+  // anchor is the channel through that fist. Anything else is placed by the
+  // palm, which is what the guns were framed against.
+  const anchor = (axis && template.gripR) ? template.gripR : template.palmR;
   inst.scale.setScalar(HAND_SCALE);
-  inst.position.copy(template.palmR).multiplyScalar(-HAND_SCALE);
+  inst.position.copy(anchor).multiplyScalar(-HAND_SCALE);
   holder.add(inst);
   holder.position.copy(grip);
   if (opts.bias) holder.position.add(new THREE.Vector3(...opts.bias));
+
+  /*
+   * Turn the weapon to the hand, not the hand to the weapon.
+   *
+   * The authored fist closes around a rifle's pistol grip — a column running
+   * up through the palm. Every gun has one of those, so translating the hand
+   * onto it is enough. A bat does not: its shaft runs along the barrel axis,
+   * ninety degrees from where the fingers curl, and the result is a hand
+   * splayed flat across the handle with the bat through the palm. That is
+   * what "not properly grabbing" looks like, and no amount of moving the hand
+   * fixes it.
+   *
+   * Rotating the hand rig instead does fix the fist, and breaks everything
+   * else: the shoulders travel with it, and the support arm ends up pointing
+   * at the camera with its open end filling the middle of the screen. So the
+   * weapon is turned inside the composition instead. The arms keep the pose
+   * and the framing their author gave them — the same ones that make the one
+   * hand-authored weapon in the game look right — and the shaft is laid
+   * through the fist where the fingers already close.
+   *
+   * `gripRoll` then spins the weapon about that shaft: the one degree of
+   * freedom the alignment leaves, and the difference between a fist closed
+   * over a handle and one closed under it.
+   */
+  if (axis && template.wrapR && group.userData.parts?.body) {
+    const from = new THREE.Vector3(...axis).normalize();
+    const q = new THREE.Quaternion().setFromUnitVectors(from, template.wrapR);
+    const roll = fit.gripRoll ?? MELEE_ROLL;
+    if (roll) q.premultiply(new THREE.Quaternion().setFromAxisAngle(template.wrapR, roll));
+
+    const body = group.userData.parts.body;
+    body.quaternion.premultiply(q);
+    body.position.sub(grip).applyQuaternion(q).add(grip);
+    // Anything measured off the weapon in group space turns with it.
+    group.userData.muzzle?.sub(grip).applyQuaternion(q).add(grip);
+    group.userData.tip?.sub(grip).applyQuaternion(q).add(grip);
+    group.userData.gripQuat = q;
+  }
+
   group.add(holder);
   group.updateMatrixWorld(true);
+
+  // The support point was measured off the weapon before it turned, so it has
+  // to turn with it or the second hand reaches for where the fore-end was.
+  if (group.userData.gripQuat) {
+    support.sub(grip).applyQuaternion(group.userData.gripQuat).add(grip);
+    group.updateMatrixWorld(true);
+  }
 
   if (fit.oneHanded) {
     collapse(bones.l_upperarm);
