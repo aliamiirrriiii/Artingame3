@@ -16,6 +16,11 @@ import { ZombieManager, POSE } from '../src/entities/zombies.js';
 import { HITBOX_DEFS } from '../src/entities/hitboxes.js';
 import { PRESETS } from '../src/core/quality.js';
 
+const qsv = (k) => {
+  const v = new URLSearchParams(location.search).get(k);
+  return v ? v.split(',').map(Number) : null;
+};
+
 const report = { errors: [], steps: [] };
 window.__smoke = report;
 addEventListener('error', e => report.errors.push('window: ' + e.message));
@@ -156,6 +161,12 @@ try {
     { p: [-6, 1.7, 26], t: [-3.4, 1.5, 30], pose: { armEuler: [1, 0, 0], foreEuler: [1, 0.4, 0] } },
     { p: [0, 12, 16], t: [0, 1, 30], pose: { armEuler: [1, 0, 0], foreEuler: [1, 0.4, 0] } },
   ];
+  // ?eye=x,y,z&look=x,y,z — put the camera anywhere. The fixed views answer
+  // questions about the zombies; this one answers questions about the level,
+  // which is the other half of what this page renders.
+  const eye = qsv('eye'), look = qsv('look');
+  if (eye && look) { views.unshift({ p: eye, t: look }); report.freeCam = true; }
+
   let vi = 0; window.__setView = n => { vi = n; };
   if (new URLSearchParams(location.search).get('gore') === '1') {
     views[0] = { p: [0, 1.62, 20.4], t: [0, 1.30, 24] };
@@ -274,13 +285,13 @@ try {
     stage.update(dt, t);
     stage.render();
     times.push(performance.now() - s);
-    if (frames === 20 && !report.gore && !report.physics) report.hitbox = probe();
+    if (frames === 20 && !report.gore && !report.physics && !report.freeCam) report.hitbox = probe();
     if (frames === 24) {
       const so = times.slice().sort((a,b)=>a-b);
       report.frameMs = { median: Math.round(so[12]*100)/100, p90: Math.round(so[21]*100)/100 };
       report.draws = stage.drawCalls; report.tris = stage.triangles;
       report.alive = zm.aliveCount;
-      const hb = (report.gore || report.physics)
+      const hb = (report.gore || report.physics || report.freeCam)
         ? { fails: [], drift: 1 }
         : (report.hitbox || { fails: ['probe never ran'] });
       if (hb.fails.length) report.errors.push('hitbox: ' + hb.fails.join('; '));

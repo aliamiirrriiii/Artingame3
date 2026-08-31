@@ -15,6 +15,85 @@ import * as THREE from 'three';
  *     the visible repetition you would otherwise get from a 1k texture stretched
  *     over a 90 m street.
  */
+/**
+ * A tuft of grass and weeds, drawn onto a canvas.
+ *
+ * There is no foliage in the downloaded asset pack and no budget to fetch
+ * one, so this draws the card: blades fanning up from the bottom of the
+ * quad, tapering, in a spread of dead-summer greens and yellows. Crossed
+ * pairs of these are what turn a kerb line from a clean edge into somewhere
+ * that has not been swept in a year — which is most of what makes an
+ * abandoned street look abandoned rather than merely empty.
+ */
+function makeFoliageTexture(size = 256) {
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = size;
+  const ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, size, size);
+
+  const blades = 108;
+  for (let i = 0; i < blades; i++) {
+    // Roots spread across the bottom, tips fan outward and upward.
+    const rootX = size * (0.12 + Math.random() * 0.76);
+    const lean = (rootX / size - 0.5) * size * (0.35 + Math.random() * 0.55);
+    const height = size * (0.34 + Math.random() * 0.60);
+    const tipX = rootX + lean;
+    const tipY = size - height;
+    const width = size * (0.005 + Math.random() * 0.013);
+
+    /*
+     * Dead grass is more yellow than green, and the tips go first — but not
+     * by much. Painted brighter than this the clump stops reading as grass
+     * and starts reading as a plastic spike: cards have no self-shadowing, so
+     * whatever value is in the texture is very nearly what reaches the screen,
+     * and a light one lands as though the weeds were lit from inside.
+     *
+     * So these values are much darker than grass looks to the eye. Real grass
+     * is dark because it shadows itself a dozen times over between the tip of
+     * a blade and the ground; a flat card does none of that, so the shadowing
+     * has to be painted in.
+     */
+    const g = ctx.createLinearGradient(rootX, size, tipX, tipY);
+    const dry = Math.random();
+    g.addColorStop(0, `rgb(${13 + dry * 9}, ${18 + dry * 9}, ${8 + dry * 5})`);
+    g.addColorStop(0.6, `rgb(${22 + dry * 14}, ${27 + dry * 13}, ${12 + dry * 7})`);
+    g.addColorStop(1, `rgb(${33 + dry * 24}, ${36 + dry * 19}, ${16 + dry * 12})`);
+
+    ctx.beginPath();
+    ctx.moveTo(rootX - width, size + 2);
+    // A blade bows: the control point sits short of the tip and off to the
+    // side, which is the difference between grass and a set of spikes.
+    ctx.quadraticCurveTo(
+      rootX + lean * 0.35, size - height * 0.55,
+      tipX, tipY,
+    );
+    ctx.quadraticCurveTo(
+      rootX + lean * 0.35 + width * 2.2, size - height * 0.55,
+      rootX + width, size + 2,
+    );
+    ctx.closePath();
+    ctx.fillStyle = g;
+    ctx.fill();
+  }
+
+  // A darker mass at the base, so the roots read as a clump rather than as
+  // separate blades standing in a line.
+  const base = ctx.createLinearGradient(0, size, 0, size * 0.76);
+  base.addColorStop(0, 'rgba(22, 26, 14, 0.98)');
+  base.addColorStop(1, 'rgba(22, 26, 14, 0)');
+  ctx.fillStyle = base;
+  ctx.fillRect(size * 0.06, size * 0.76, size * 0.88, size * 0.24);
+
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.generateMipmaps = true;
+  tex.needsUpdate = true;
+  return tex;
+}
+
 export class MaterialLibrary {
   constructor(assets) {
     this.assets = assets;
@@ -116,7 +195,11 @@ export class MaterialLibrary {
     this.set('asphalt', this.breakup(this._std({
       normalMap: rep(grungeN, 1, 1),
       normalScale: new THREE.Vector2(0.55, 0.55),
-      color: 0x333337,
+      // Dry asphalt in daylight is a mid grey, not a dark one. The old value
+      // was mixed under a night sky, where it read as tarmac; with a real sun
+      // on it the street came out near black and everything standing on it
+      // lost its contact shadow into the surface.
+      color: 0x3f3f45,
       roughness: 0.90,
       metalness: 0.02,
       envMapIntensity: 0.30,
@@ -433,6 +516,25 @@ export class MaterialLibrary {
       metalness: 0,
       envMapIntensity: 0.2,
     }), { scale: 6, albedo: 0.55, rough: 0.2, tint: 0x8e8d86 }));
+
+    // Weeds and scrub. Alpha-tested rather than blended, so a clump sorts
+    // correctly against everything else and casts a real shadow.
+    const foliageTex = makeFoliageTexture(256);
+    this.set('foliage', this._std({
+      map: foliageTex,
+      // No alphaMap. three reads an alphaMap's *green* channel, and on a green
+      // texture that is a mid-range value everywhere there is a leaf — so an
+      // alpha test that should have cut the empty half of the card cut most of
+      // the blades instead, and the weeds simply did not appear. The map's own
+      // alpha channel is the mask, and the standard material already uses it.
+      alphaTest: 0.42,
+      transparent: false,
+      color: 0xffffff,
+      roughness: 0.97,
+      metalness: 0,
+      envMapIntensity: 0.22,
+      side: THREE.DoubleSide,
+    }));
 
     // ----------------------------------------------------------- transparent
 

@@ -160,6 +160,7 @@ export class Level {
     this._buildPlaza();
     this._buildStreetProps();
     this._buildClutter();
+    this._buildOvergrowth();
     this._buildSpawnPoints();
     this._buildStations();
     this._finalize();
@@ -1045,6 +1046,95 @@ export class Level {
     }
   }
 
+  /**
+   * A clump of weeds: crossed cards, so it holds up from any angle.
+   *
+   * Three quads at sixty degrees rather than two at ninety — the extra card
+   * costs two triangles and removes the angle at which a crossed pair goes
+   * edge-on and disappears.
+   */
+  _weeds(x, z, w, h, cards = 3) {
+    const batch = this._batch('foliage');
+    const spin = this.rng.range(0, TAU);
+    for (let i = 0; i < cards; i++) {
+      const g = new THREE.PlaneGeometry(w, h);
+      g.translate(0, h / 2, 0);
+      g.rotateY(spin + (i / cards) * Math.PI);
+      g.translate(x, 0, z);
+      batch.push(g);
+    }
+  }
+
+  /**
+   * Where a year of no maintenance shows.
+   *
+   * Weeds come up through the joint between two surfaces before they come up
+   * anywhere else, so this seeds the kerb lines, the foot of every wall and
+   * the open lots, and leaves the middle of the road alone — which is both
+   * what actually happens and what keeps the ground the player fights on
+   * clear.
+   */
+  _buildOvergrowth() {
+    const detail = this.preset.worldDetail ?? 2;
+    if (detail < 1) return;
+    const r = this.rng;
+    const H = ARENA_HALF;
+
+    // Along the kerbs.
+    for (const [sx, sz] of QUADRANTS) {
+      const cx = sx * 34, cz = sz * 34, half = 15.3;
+      for (const [nx, nz] of FACES) {
+        for (let k = -13; k <= 13; k++) {
+          if (r.next() < 0.45) continue;
+          const u = k * 1.1 + r.range(-0.3, 0.3);
+          const px = cx + nx * half + (nx !== 0 ? 0 : u);
+          const pz = cz + nz * half + (nz !== 0 ? 0 : u);
+          this._weeds(px + r.range(-0.12, 0.12), pz + r.range(-0.12, 0.12),
+            r.range(0.32, 0.62), r.range(0.26, 0.55), 2);
+        }
+      }
+    }
+
+    // Against the ring wall, where nothing ever walks.
+    for (const [nx, nz] of FACES) {
+      for (let k = -44; k <= 44; k += 1.6) {
+        if (r.next() < 0.4) continue;
+        const px = nx !== 0 ? nx * (H - 2.5) : k;
+        const pz = nz !== 0 ? nz * (H - 2.5) : k;
+        this._weeds(px + r.range(-0.4, 0.4), pz + r.range(-0.4, 0.4),
+          r.range(0.4, 0.9), r.range(0.35, 0.8), 2);
+      }
+    }
+
+    // The two open lots have gone over completely.
+    for (const lx of [-34, 34]) {
+      for (let i = 0; i < 90; i++) {
+        const px = lx + r.range(-6.5, 6.5), pz = r.range(-10.5, 10.5);
+        if (this._occupied(px, pz, 0.5)) continue;
+        this._weeds(px, pz, r.range(0.5, 1.2), r.range(0.4, 1.1), 3);
+      }
+      if (detail >= 2) {
+        // A few saplings, tall enough to break the roofline behind them.
+        for (let i = 0; i < 5; i++) {
+          const px = lx + r.range(-5, 5), pz = r.range(-8, 8);
+          if (this._occupied(px, pz, 1.2)) continue;
+          this.cylinder('wood', px, 0, pz, 0.05, 0.09, r.range(1.6, 2.6), { seg: 5 });
+          this._weeds(px, pz, r.range(1.6, 2.4), r.range(1.8, 2.8), 3);
+        }
+      }
+    }
+
+    if (detail < 2) return;
+
+    // Clumps in the cracks, out in the open, sparsely.
+    for (let i = 0; i < 70; i++) {
+      const a = r.range(0, TAU), rad = r.range(15, 46);
+      const px = Math.cos(a) * rad, pz = Math.sin(a) * rad;
+      if (this._occupied(px, pz, 0.6)) continue;
+      this._weeds(px, pz, r.range(0.3, 0.7), r.range(0.25, 0.6), 2);
+    }
+  }
+
   _buildSpawnPoints() {
     const candidates = [];
     for (const [sx, sz] of QUADRANTS) {
@@ -1250,7 +1340,7 @@ export class Level {
       const mesh = new THREE.Mesh(merged, material);
       mesh.name = `level:${key}`;
       mesh.castShadow = key !== 'asphalt' && key !== 'wetAsphalt' && key !== 'dirt'
-        && key !== 'windowDark' && key !== 'tile';
+        && key !== 'windowDark' && key !== 'tile' && key !== 'roadPaint';
       mesh.receiveShadow = true;
       mesh.matrixAutoUpdate = false;
       mesh.updateMatrix();
