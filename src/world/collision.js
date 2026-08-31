@@ -18,6 +18,9 @@ export class Box {
     this.tag = tag;
     // Broad-phase circle, so most tests reject with one distance compare.
     this.br = Math.hypot(hx, hz);
+    // Query stamp, so a box that spans four grid cells is only collected once
+    // per query without scanning the results so far. See `near`.
+    this._seen = 0;
   }
 
   toLocal(x, z, out) {
@@ -51,6 +54,7 @@ export class CollisionWorld {
     this.boxes = [];
     this.cell = cell;
     this.grid = new Map();
+    this._nearStamp = 0;
   }
 
   add(box) {
@@ -69,10 +73,19 @@ export class CollisionWorld {
     return box;
   }
 
-  /** Boxes near a point, written into `out` (reused array). */
+  /**
+   * Boxes near a point, written into `out` (reused array).
+   *
+   * Deduplicated by a per-query stamp rather than by scanning `out`. That was
+   * a linear search per candidate — fine at a handful of calls a frame, which
+   * is what this had when only characters and bullets used it, and quadratic
+   * in the wrong place now that a few hundred blood droplets sweep themselves
+   * against the level every step.
+   */
   near(x, z, radius, out) {
     out.length = 0;
     const c = this.cell;
+    const stamp = ++this._nearStamp;
     const x0 = Math.floor((x - radius) / c), x1 = Math.floor((x + radius) / c);
     const z0 = Math.floor((z - radius) / c), z1 = Math.floor((z + radius) / c);
     for (let gx = x0; gx <= x1; gx++) {
@@ -81,7 +94,9 @@ export class CollisionWorld {
         if (!arr) continue;
         for (let i = 0; i < arr.length; i++) {
           const b = arr[i];
-          if (out.indexOf(b) === -1) out.push(b);
+          if (b._seen === stamp) continue;
+          b._seen = stamp;
+          out.push(b);
         }
       }
     }
