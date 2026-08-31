@@ -74,6 +74,75 @@ try {
     report.gore = zm.alive.map((z) => ({ type: z.type, severed: [...z.severed] }));
   }
 
+  // ------------------------------------------------------- corpse physics
+  //
+  // A body is a solid object from the moment it dies. Two things have to hold:
+  // one thrown at a wall stops at the wall, and a heap of them is a heap of
+  // separate bodies rather than one body drawn six times.
+  if (new URLSearchParams(location.search).get('physics') === '1') {
+    for (const z of zm.alive.slice()) zm._release(z);
+
+    const solid = (x, zz) => level.collision.boxes.some(
+      (b) => b.y1 > 0.9 && b.containsXZ(x, zz, -0.05),
+    );
+
+    // A wall to throw them at: the tallest box near the middle of the arena.
+    let wall = null;
+    for (const b of level.collision.boxes) {
+      if (b.y1 < 2 || Math.hypot(b.cx, b.cz) > 30) continue;
+      if (!wall || b.br > wall.br) wall = b;
+    }
+    const out = { thrown: 0, inside: 0, wall: wall ? [Math.round(wall.cx), Math.round(wall.cz)] : null };
+
+    if (wall) {
+      // Stand them off the wall's local +X face and fire them into it.
+      const nx = wall.cos, nz = wall.sin;
+      for (let i = 0; i < 5; i++) {
+        const px = wall.cx + nx * (wall.hx + 3.2) + (i - 2) * 0.9 * -wall.sin;
+        const pz = wall.cz + nz * (wall.hx + 3.2) + (i - 2) * 0.9 * wall.cos;
+        if (solid(px, pz)) continue;
+        const z = zm.spawn('walker', new THREE.Vector3(px, 0, pz), 1);
+        if (!z) continue;
+        out.thrown++;
+        z.state = 'pursue'; z.stateT = 1;
+        z.vel.set(-nx * 11, 0, -nz * 11);
+        zm._kill(z, new THREE.Vector3(-nx, 0, -nz), false, true, 'chest', 60, z.pos.clone());
+      }
+      for (let i = 0; i < 90; i++) zm.update(1 / 60, fakePlayer, i / 60);
+      for (const z of zm.alive) {
+        if (z.state !== 'dying') continue;
+        if (solid(z.pos.x, z.pos.z)) out.inside++;
+      }
+    }
+
+    // A heap: six killed on the same square metre must not end up stacked.
+    for (const z of zm.alive.slice()) zm._release(z);
+    const heap = [];
+    for (let i = 0; i < 6; i++) {
+      const z = zm.spawn('walker', new THREE.Vector3(0.1 * i - 0.25, 0, 30), 1);
+      if (!z) continue;
+      z.state = 'pursue'; z.stateT = 1;
+      z.vel.set(0, 0, 0);
+      zm._kill(z, new THREE.Vector3(0, 0, 1), false, true, 'chest', 60, z.pos.clone());
+      heap.push(z);
+    }
+    for (let i = 0; i < 120; i++) zm.update(1 / 60, fakePlayer, i / 60);
+    let closest = 99;
+    for (let i = 0; i < heap.length; i++) {
+      for (let j = i + 1; j < heap.length; j++) {
+        closest = Math.min(closest, Math.hypot(heap[i].pos.x - heap[j].pos.x, heap[i].pos.z - heap[j].pos.z));
+      }
+    }
+    out.heap = heap.length;
+    out.closest = Math.round(closest * 1000) / 1000;
+    report.physics = out;
+
+    if (out.thrown < 3) report.errors.push(`physics: only ${out.thrown} bodies were thrown`);
+    if (out.inside > 0) report.errors.push(`physics: ${out.inside} corpses came to rest inside the level`);
+    if (out.heap < 5) report.errors.push('physics: the heap never formed');
+    if (!(closest > 0.35)) report.errors.push(`physics: corpses stacked — closest pair ${out.closest}m apart`);
+  }
+
   const views = [
     { p: [0, 1.9, 22], t: [0, 1.4, 30], pose: { armEuler: [1, 0, 0], foreEuler: [1, 0.4, 0] } },
     { p: [0, 1.9, 22], t: [0, 1.4, 30], pose: { armEuler: [0, 0, -1], foreEuler: [0, 0.4, -1] } },
@@ -189,13 +258,15 @@ try {
     stage.update(dt, t);
     stage.render();
     times.push(performance.now() - s);
-    if (frames === 20 && !report.gore) report.hitbox = probe();
+    if (frames === 20 && !report.gore && !report.physics) report.hitbox = probe();
     if (frames === 24) {
       const so = times.slice().sort((a,b)=>a-b);
       report.frameMs = { median: Math.round(so[12]*100)/100, p90: Math.round(so[21]*100)/100 };
       report.draws = stage.drawCalls; report.tris = stage.triangles;
       report.alive = zm.aliveCount;
-      const hb = report.gore ? { fails: [], drift: 1 } : (report.hitbox || { fails: ['probe never ran'] });
+      const hb = (report.gore || report.physics)
+        ? { fails: [], drift: 1 }
+        : (report.hitbox || { fails: ['probe never ran'] });
       if (hb.fails.length) report.errors.push('hitbox: ' + hb.fails.join('; '));
       if (!(hb.drift > 0.03)) {
         report.errors.push(`hitbox: head box sits ${(hb.drift || 0).toFixed(3)}m from the old static guess — it is not following the pose`);

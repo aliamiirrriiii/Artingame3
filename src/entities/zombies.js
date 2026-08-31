@@ -212,7 +212,7 @@ export class ZombieManager {
       boostT: 0, boostMul: 1,
       distToPlayer: 999, lodLevel: 0, animAccum: 0,
       deathDir: new THREE.Vector3(),
-      fallAngle: 0, fallAxis: 0, launched: false, spin: 0,
+      fallAngle: 0, fallAxis: 0, launched: false, bounced: false, spin: 0,
       lastGrowl: 0, chargeT: 0, charging: false,
       spawnT: 0, addTimer: 0,
       currentClip: null,
@@ -397,6 +397,7 @@ export class ZombieManager {
     z.animAccum = 0;
     z.hbFrame = -1;
     z.launched = false;
+    z.bounced = false;
     z.spin = 0;
     z.pos.y = 0;
     // A recycled zombie may still be carrying the collapsed bones of the last
@@ -983,17 +984,31 @@ export class ZombieManager {
     if (z.launched) {
       // Ballistic, tumbling, until it comes down. Then it slides and settles
       // like any other corpse.
+      const ox = z.pos.x, oy = z.pos.y, oz = z.pos.z;
       z.vel.y -= 21 * dt;
       z.pos.y += z.vel.y * dt;
       z.pos.x += z.vel.x * dt;
       z.pos.z += z.vel.z * dt;
       z.fallAngle += z.spin * dt;
+      this._corpseHitWorld(z, ox, oy, oz);
       if (z.pos.y <= 0) {
         z.pos.y = 0;
-        z.launched = false;
-        z.stateT = 0.18;              // rejoin the topple part-way through
-        z.vel.x *= 0.35; z.vel.z *= 0.35;
+        const impact = Math.abs(z.vel.y);
+        // One bounce, and only off a real drop. A body that lands from a
+        // sledgehammer's arc should skip once and slide; one that has already
+        // hit the pavement should stay on it.
+        if (impact > 6 && !z.bounced) {
+          z.bounced = true;
+          z.vel.y = impact * 0.24;
+          z.vel.x *= 0.6; z.vel.z *= 0.6;
+          z.spin *= 0.5;
+        } else {
+          z.launched = false;
+          z.stateT = 0.18;            // rejoin the topple part-way through
+          z.vel.x *= 0.35; z.vel.z *= 0.35;
+        }
         this.fx.bloodPool(z.pos.x, z.pos.z, rand(0.8, 1.4) * z.scale);
+        this.fx.footDust(z.pos.x, z.pos.z, 1.8 * z.scale);
         audio.flesh(this._tmp.set(z.pos.x, 0.2, z.pos.z), false);
       }
     } else {
@@ -1004,11 +1019,104 @@ export class ZombieManager {
       z.vel.z *= Math.exp(-4 * dt);
       z.pos.x += z.vel.x * dt;
       z.pos.z += z.vel.z * dt;
+      // A sliding body is still a solid one: without this it slides through
+      // the barricade it was killed against and comes to rest inside a car.
+      this.level?.collision?.resolveCircle(
+        z.pos, z.radius * 0.85, 0.05, 0.55, this._corpseScratch || (this._corpseScratch = []),
+      );
     }
+
+    this._separateCorpses(z, dt);
 
     if (z.stateT > 2.8) {
       z.dissolve = clamp((z.stateT - 2.8) / 1.3, 0, 1.05);
       if (z.dissolve >= 1.04) { z.state = 'dead'; }
+    }
+  }
+
+  /**
+   * A launched body against the level.
+   *
+   * Swept, not tested at the end point: a brute thrown by a sledgehammer
+   * crosses two metres in a frame and would otherwise be found on the far
+   * side of the wall it should have hit. The body is treated as a sphere at
+   * chest height, which is where it meets a wall.
+   */
+  _corpseHitWorld(z, ox, oy, oz) {
+    const col = this.level?.collision;
+    if (!col?.sweepPoint) return false;
+    const r = z.radius * 0.8;
+    const h = z.height * 0.5;
+    const w = this._corpseSweep || (this._corpseSweep = {});
+    if (col.sweepPoint(ox, oy + h, oz, z.pos.x, z.pos.y + h, z.pos.z, w) < 0) return false;
+
+    const speed = Math.hypot(z.vel.x, z.vel.y, z.vel.z);
+    z.pos.x = w.x + w.nx * r;
+    z.pos.z = w.z + w.nz * r;
+    if (w.ny !== 0) z.pos.y = Math.max(0, w.y + w.ny * r - h);
+
+    const dot = z.vel.x * w.nx + z.vel.y * w.ny + z.vel.z * w.nz;
+    // A body is not a ball. Most of the energy goes into the wall and the
+    // rest of it into a heap on the floor.
+    z.vel.x = (z.vel.x - 2 * dot * w.nx) * 0.24;
+    z.vel.y = (z.vel.y - 2 * dot * w.ny) * 0.24;
+    z.vel.z = (z.vel.z - 2 * dot * w.nz) * 0.24;
+    z.spin *= 0.45;
+
+    if (speed > 3.5) {
+      this._tmp.set(w.x, w.y, w.z);
+      this._tmp2.set(w.nx, w.ny, w.nz);
+      this.fx.bloodSplat(this._tmp, this._tmp2, clamp(0.5 + speed * 0.09, 0.5, 1.8));
+      this.fx.bloodBurst(this._tmp, this._tmp2, clamp(speed * 0.12, 0.4, 1.6), false);
+      audio.flesh(this._tmp, true);
+    }
+    return true;
+  }
+
+  /**
+   * Corpses do not lie inside one another.
+   *
+   * Without this a wave that dies in a doorway collapses into what looks like
+   * a single body with too many limbs. The push is positional and gentle —
+   * these are inert objects settling against each other, not agents shoving —
+   * and it only sees other corpses, so the living still walk over the dead.
+   */
+  _separateCorpses(z, dt) {
+    const cx = Math.floor(z.pos.x / this._cell);
+    const cz = Math.floor(z.pos.z / this._cell);
+    let pushX = 0, pushZ = 0;
+
+    for (let gx = cx - 1; gx <= cx + 1; gx++) {
+      for (let gz = cz - 1; gz <= cz + 1; gz++) {
+        const arr = this._grid.get(gx * 73856093 ^ gz * 19349663);
+        if (!arr) continue;
+        for (let i = 0; i < arr.length; i++) {
+          const o = arr[i];
+          if (o === z || o.state !== 'dying') continue;
+          // A body on the ground takes up more floor than one on its feet.
+          const minD = (z.radius + o.radius) * 1.15;
+          const dx = z.pos.x - o.pos.x, dz = z.pos.z - o.pos.z;
+          const d2 = dx * dx + dz * dz;
+          if (d2 > minD * minD) continue;
+          if (d2 < 1e-6) {
+            // Exactly coincident: nudge on the phase so they do not both
+            // decide to move the same way for ever.
+            pushX += Math.cos(z.phase) * 0.5;
+            pushZ += Math.sin(z.phase) * 0.5;
+            continue;
+          }
+          const d = Math.sqrt(d2);
+          const f = (minD - d) / minD;
+          pushX += (dx / d) * f;
+          pushZ += (dz / d) * f;
+        }
+      }
+    }
+
+    if (pushX || pushZ) {
+      const k = Math.min(1, dt * 5) * 0.55;
+      z.pos.x += pushX * k;
+      z.pos.z += pushZ * k;
     }
   }
 

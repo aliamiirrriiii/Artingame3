@@ -141,6 +141,21 @@ jobs:
         # this test could not have failed, which is exactly why it was wrong.
         run: node tools/smoke.mjs --page tools/zombies.html --viewport 960x540
 
+      - name: Corpse physics
+        # A body is a solid object from the moment it dies. Throws bodies at a
+        # wall and asserts none of them ends up inside it, then kills six on
+        # one square metre and asserts the heap is six bodies rather than one
+        # drawn six times. With the collision removed this reports both.
+        run: node tools/smoke.mjs --page tools/zombies.html --viewport 960x540 --params physics=1
+
+      - name: Blood physics
+        # Spray fired at a known wall: nothing may still be in the air
+        # afterwards, nothing may land inside the masonry, runners have to
+        # descend, repeated bleeding into one place has to make one growing
+        # pool rather than six, two pools laid apart have to grow together,
+        # and gibs have to stay on this side of the wall.
+        run: node tools/smoke.mjs --page tools/blood.html --viewport 1280x720
+
       - name: Weapon mechanisms
         # Builds all twelve weapons through the real viewmodel and asserts
         # every slide, bolt, pump, cylinder and magazine actually moves. The
