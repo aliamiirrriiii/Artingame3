@@ -64,6 +64,7 @@ export class Combat {
     this.onDamage = null;      // (worldPoint, amount, crit) => void
     this.onBreak = null;       // (spec) => void
     this.onSwingHit = null;    // (hits, spec, killed) => void
+    this.onImpact = null;      // (bite, killed) => void — a swing that connected
 
     // Improvised weapons wear out; guns do not.
     this.condition = new Condition();
@@ -784,6 +785,11 @@ export class Combat {
     if (hits.length) {
       audio.flesh(hits[0].point, crit);
       this.shotsHit++;
+      // The weapon stalls where it met the body, and the frame is held for a
+      // moment. Weight and how many bodies it went through decide how long.
+      const bite = clamp((w.heft ?? 0.5) * (0.6 + hits.length * 0.35), 0.2, 1.6);
+      this.vm.swingImpact(bite);
+      if (this.onImpact) this.onImpact(bite, kills > 0);
     }
     this.stage.addShake((w.shake ?? 0.08) * (hits.length ? 1.8 : 1));
     this.player.addRecoil(w.recoil.pitch, w.recoil.yaw * sw.side);

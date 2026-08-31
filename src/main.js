@@ -412,6 +412,12 @@ class Game {
 
     this.economy.onNotice = (t, tone) => this.hud.notice(t, tone);
     this.economy.onPickup = (s) => this.pickups.take(s);
+    // A swing that lands holds the frame too, in proportion to what it hit.
+    // Guns already get this on a kill; melee gets it on contact, which is
+    // where the whole feel of a heavy weapon lives.
+    this.combat.onImpact = (bite) => {
+      this.hitStop = Math.min(HIT_STOP_MAX, this.hitStop + 0.020 + bite * 0.030);
+    };
     this.combat.onBreak = () => {
       this.hud.hitMarker(false, false);
       this.stage.addShake(0.16);

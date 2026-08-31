@@ -212,7 +212,7 @@ export class ZombieManager {
       boostT: 0, boostMul: 1,
       distToPlayer: 999, lodLevel: 0, animAccum: 0,
       deathDir: new THREE.Vector3(),
-      fallAngle: 0, fallAxis: 0,
+      fallAngle: 0, fallAxis: 0, launched: false, spin: 0,
       lastGrowl: 0, chargeT: 0, charging: false,
       spawnT: 0, addTimer: 0,
       currentClip: null,
@@ -396,6 +396,9 @@ export class ZombieManager {
     z.lodLevel = 0;
     z.animAccum = 0;
     z.hbFrame = -1;
+    z.launched = false;
+    z.spin = 0;
+    z.pos.y = 0;
     // A recycled zombie may still be carrying the collapsed bones of the last
     // one's amputations.
     for (const name of z.severed) { const b = z.bones[name]; if (b) b.scale.setScalar(1); }
@@ -568,7 +571,22 @@ export class ZombieManager {
     z.deathDir.copy(dir);
     z.fallAxis = Math.random() < 0.5 ? 1 : -1;
     z.fallAngle = 0;
-    z.vel.set(dir.x * 1.6, 0, dir.z * 1.6);
+    /*
+     * A body hit hard enough leaves the ground.
+     *
+     * Whatever was already pushing it — a sledgehammer's swing, a blast —
+     * decides. Toppling everything the same way makes a sledgehammer read
+     * exactly like a pistol, which is most of the reason to carry one gone.
+     */
+    const shove = Math.hypot(z.vel.x, z.vel.z);
+    z.launched = shove > 3.2;
+    z.spin = z.launched ? rand(4, 9) * z.fallAxis : 0;
+    if (z.launched) {
+      z.vel.y = clamp(1.4 + shove * 0.32, 1.4, 6.5);
+      z.vel.x *= 1.25; z.vel.z *= 1.25;
+    } else {
+      z.vel.set(dir.x * 1.6, 0, dir.z * 1.6);
+    }
 
     // A death is loud and messy — this is the payoff for the whole loop, so
     // it is deliberately the largest single effect in the game.
@@ -962,13 +980,31 @@ export class ZombieManager {
   _updateDying(z, dt) {
     z.stateT += dt;
 
-    // Fall: rotate about the foot line, then lie still, then dissolve.
-    const fall = clamp(z.stateT / 0.75, 0, 1);
-    z.fallAngle = (Math.PI * 0.5) * (1 - Math.pow(1 - fall, 3));
-    z.vel.x *= Math.exp(-4 * dt);
-    z.vel.z *= Math.exp(-4 * dt);
-    z.pos.x += z.vel.x * dt;
-    z.pos.z += z.vel.z * dt;
+    if (z.launched) {
+      // Ballistic, tumbling, until it comes down. Then it slides and settles
+      // like any other corpse.
+      z.vel.y -= 21 * dt;
+      z.pos.y += z.vel.y * dt;
+      z.pos.x += z.vel.x * dt;
+      z.pos.z += z.vel.z * dt;
+      z.fallAngle += z.spin * dt;
+      if (z.pos.y <= 0) {
+        z.pos.y = 0;
+        z.launched = false;
+        z.stateT = 0.18;              // rejoin the topple part-way through
+        z.vel.x *= 0.35; z.vel.z *= 0.35;
+        this.fx.bloodPool(z.pos.x, z.pos.z, rand(0.8, 1.4) * z.scale);
+        audio.flesh(this._tmp.set(z.pos.x, 0.2, z.pos.z), false);
+      }
+    } else {
+      // Fall: rotate about the foot line, then lie still, then dissolve.
+      const fall = clamp(z.stateT / 0.75, 0, 1);
+      z.fallAngle = (Math.PI * 0.5) * (1 - Math.pow(1 - fall, 3));
+      z.vel.x *= Math.exp(-4 * dt);
+      z.vel.z *= Math.exp(-4 * dt);
+      z.pos.x += z.vel.x * dt;
+      z.pos.z += z.vel.z * dt;
+    }
 
     if (z.stateT > 2.8) {
       z.dissolve = clamp((z.stateT - 2.8) / 1.3, 0, 1.05);
@@ -1101,7 +1137,7 @@ export class ZombieManager {
       const a = z.fallAngle * z.fallAxis;
       this._e.set(a, z.yaw + Math.PI, 0, 'YXZ');
       z.root.rotation.copy(this._e);
-      z.root.position.y = -0.12 * (z.fallAngle / (Math.PI * 0.5));
+      z.root.position.y = z.pos.y - 0.12 * clamp(z.fallAngle / (Math.PI * 0.5), 0, 1);
     }
     z.hitFlash = Math.max(0, z.hitFlash - dt * 5.5);
   }

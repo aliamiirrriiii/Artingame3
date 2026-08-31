@@ -195,8 +195,24 @@ export class Viewmodel {
   swing(duration) {
     this.swingT = 0;
     this.swingDur = Math.max(0.12, duration);
+    this._swingStall = 0;
+    this._swingJolt = 0;
     this.swingSide = -this.swingSide;
     return this.swingSide;
+  }
+
+  /**
+   * The swing hit something.
+   *
+   * The weapon stalls where it made contact and shudders, then carries on.
+   * A swing that passes through a body at the same speed it passes through
+   * air is the single clearest tell that the melee is a ray test wearing an
+   * animation; this is what makes it feel like it met resistance.
+   */
+  swingImpact(power = 1) {
+    if (this.swingT >= 1) return;
+    this._swingStall = Math.max(this._swingStall || 0, 0.045 + power * 0.055);
+    this._swingJolt = Math.max(this._swingJolt || 0, 0.5 + power * 0.9);
   }
 
   startReload(duration) {
@@ -315,7 +331,13 @@ export class Viewmodel {
       return;
     }
 
-    this.swingT = Math.min(1, this.swingT + dt / this.swingDur);
+    // Contact holds the weapon where it met the body.
+    if (this._swingStall > 0) {
+      this._swingStall = Math.max(0, this._swingStall - dt);
+      this._swingJolt = damp(this._swingJolt || 0, 0, 22, dt);
+    } else {
+      this.swingT = Math.min(1, this.swingT + dt / this.swingDur);
+    }
     const t = this.swingT;
     const s = this.swingSide;
 
@@ -335,10 +357,13 @@ export class Viewmodel {
 
     const wind = k < 0 ? -k : 0;
     const thru = k > 0 ? k : 0;
+    // A high-frequency shudder while the stall is running, decaying with it.
+    const j = (this._swingJolt || 0) * 0.035;
+    const jt = performance.now() * 0.06;
     this.current.rotation.set(
-      this.rest.x + wind * 0.42 - thru * 1.05,
-      this.rest.y - s * (wind * 0.30 + thru * 0.95),
-      this.rest.z + s * (wind * 0.22 - thru * 0.38),
+      this.rest.x + wind * 0.42 - thru * 1.05 + Math.sin(jt) * j,
+      this.rest.y - s * (wind * 0.30 + thru * 0.95) + Math.sin(jt * 1.7) * j,
+      this.rest.z + s * (wind * 0.22 - thru * 0.38) + Math.sin(jt * 2.3) * j * 1.4,
     );
     // Pull it back into the shoulder on the wind-up and throw it out on the
     // strike, so the swing has travel and not only rotation.

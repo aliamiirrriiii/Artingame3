@@ -391,6 +391,45 @@ try {
     + `${afterKill.frameMs} ms after)`);
 
   /*
+   * Weight. A sledgehammer must not kill the same way a pistol does: the body
+   * leaves the ground, and the weapon stalls where it met it.
+   */
+  console.log('\nweight');
+  const heavy = await page.evaluate(async () => {
+    const g = window.__game;
+    g.combat.takeMelee('sledge');
+    g.player.pos.set(0, 0, 20);
+    g.stage.camera.position.set(0, 1.68, 20);
+    g.stage.camera.updateMatrixWorld(true);
+
+    const z = g.zombies.alive.find((a) => a.state !== 'dying' && a.state !== 'dead');
+    if (!z) return { ran: false };
+    const cam = g.stage.camera;
+    const v = new (z.pos.constructor)(0, 0, -1).applyQuaternion(cam.quaternion);
+    z.pos.set(cam.position.x + v.x * 1.3, 0, cam.position.z + v.z * 1.3);
+    z.root.position.copy(z.pos);
+    z.root.updateMatrixWorld(true);
+    z.hbFrame = -1;
+    z.maxHealth = 200; z.health = 1; z.state = 'pursue'; z.severed.clear();
+
+    g.combat.cooldown = 0;
+    g.combat._fireMelee(g.combat.spec);
+    g.combat._resolveSwing();
+    const stalled = g.viewmodel._swingStall > 0;
+    const launched = !!z.launched;
+    let peak = 0;
+    for (let i = 0; i < 60; i++) {
+      g.zombies._updateDying(z, 1 / 60);
+      peak = Math.max(peak, z.pos.y);
+    }
+    return { ran: true, stalled, launched, peak: +peak.toFixed(2), state: z.state };
+  });
+  check('a heavy swing stalls on contact', heavy.stalled === true);
+  check('a sledgehammer puts the body in the air', heavy.launched === true);
+  check('and it comes back down', heavy.peak > 0.25 && heavy.state !== 'dead',
+    `peak ${heavy.peak} m`);
+
+  /*
    * Wave conditions. Drawn procedurally, so the only way to know they reach
    * the game is to run a late wave and look at what actually changed: the
    * horde's multipliers, the sky, and the panel that tells the player.
