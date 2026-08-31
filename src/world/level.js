@@ -1279,9 +1279,52 @@ export class Level {
     for (const d of defs) {
       // Physical cabinet so the station is a real object in the world.
       if (d.kind === 'perk') {
-        this.box('paintedMetal', d.x, 0, d.z, 1.1, 2.0, 0.8, { rotY: d.rot, tag: 'prop' });
-        this.box('neonCyan', d.x + Math.cos(d.rot) * 0.45, 1.15, d.z + Math.sin(d.rot) * 0.45,
-          0.75, 0.5, 0.06, { rotY: d.rot, collide: false });
+        /*
+         * A vending machine, not a box with a light on it.
+         *
+         * These sit at eight places around the map and you walk right up to
+         * every one of them to use it, so it is the prop the player sees from
+         * closest. What it needed was a plinth to stand on, a frame around the
+         * front so the panel is recessed rather than stuck on, a sign board
+         * over the top, and a return down each side — four minutes of boxes
+         * and it stops being a monolith.
+         */
+        /*
+         * The cabinet's own axes, matching what `box`'s rotY actually does:
+         * three's Y rotation sends local +X to (cos, -sin) and local +Z to
+         * (sin, cos) in world XZ. Getting these the wrong way round is not a
+         * subtle error — the frame stiles end up lying across the front of the
+         * machine instead of running down its sides.
+         */
+        const c = Math.cos(d.rot), sn = Math.sin(d.rot);
+        const fwd = (t) => [d.x + sn * t, d.z + c * t];
+        const side = (t) => [d.x + c * t, d.z - sn * t];
+
+        this.box('steel', d.x, 0, d.z, 1.24, 0.16, 0.92, { rotY: d.rot, tag: 'prop' });
+        this.box('paintedMetal', d.x, 0.16, d.z, 1.10, 1.86, 0.80, { rotY: d.rot, tag: 'prop' });
+        // Frame: two stiles and a head, standing proud of the front face.
+        for (const s2 of [-1, 1]) {
+          const [px, pz] = side(s2 * 0.47);
+          this.box('steel', px, 0.16, pz, 0.14, 1.86, 0.86, { rotY: d.rot, collide: false });
+        }
+        {
+          const [px, pz] = fwd(0.06);
+          this.box('steel', px, 1.72, pz, 1.16, 0.30, 0.14, { rotY: d.rot, collide: false });
+          this.box('steel', px, 0.16, pz, 1.16, 0.22, 0.14, { rotY: d.rot, collide: false });
+        }
+        // Sign board on top, and the lit strip that lights it.
+        this.box('paintedMetal', d.x, 2.02, d.z, 1.26, 0.46, 0.30, { rotY: d.rot, collide: false });
+        {
+          const [px, pz] = fwd(0.17);
+          this.box('neonCyan', px, 2.10, pz, 1.02, 0.26, 0.04, { rotY: d.rot, collide: false });
+        }
+        // The illuminated front panel, set back inside the frame.
+        {
+          const [px, pz] = fwd(0.40);
+          this.box('neonCyan', px, 0.62, pz, 0.80, 1.02, 0.05, { rotY: d.rot, collide: false });
+          const [gx, gz] = fwd(0.44);
+          this.box('glass', gx, 0.60, gz, 0.86, 1.08, 0.03, { rotY: d.rot, collide: false });
+        }
         this.fixtures.push({
           pos: new THREE.Vector3(d.x, 1.6, d.z), color: PERK_LIGHT[d.perk] || 0x40e0ff,
           intensity: 16, range: 9, flicker: 0.08, kind: 'perk',
