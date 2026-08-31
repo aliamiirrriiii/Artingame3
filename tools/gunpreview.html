@@ -562,6 +562,7 @@ try {
     const cfg = { ...(MODEL_VIEWMODELS[WEAPONS[vm].model.type] || {}) };
     if (q.get('ge')) cfg.gripEnd = q.get('ge');
     if (q.get('gi')) cfg.gripInset = Number(q.get('gi'));
+    if (q.get('ga')) cfg.gripAt = q.get('ga').split(',').map(Number);
     if (q.get('vs')) cfg.scale = Number(q.get('vs'));
     if (q.get('vo')) cfg.offset = q.get('vo').split(',').map(Number);
     const g = (cfg.asset && (cfg.adopt ? buildAdoptedWeapon(WEAPONS[vm], cfg, assets, mats)

@@ -101,12 +101,19 @@ export const MODEL_VIEWMODELS = {
     // A power tool with a pistol grip: held like a pistol, not like a shaft,
     // and carried where a pistol is carried rather than down at a bat's height.
     gripAxis: false,
-    rest: [0, 0, 0],
-    basePos: [0.16, -0.17, -0.30], adsPos: [0.10, -0.14, -0.34],
+    // Turned a little off the view axis: pointed straight down it, a drill is
+    // a yellow disc, and the bit — the whole reason to carry one — is hidden
+    // behind the chuck.
+    rest: [0, 0.5, 0],
+    basePos: [0.14, -0.09, -0.32], adsPos: [0.09, -0.07, -0.35],
     // Modelled upright with the body along X: turn the body forward and stand
     // the grip under it.
     scale: 1, rotation: [0, Math.PI / 2, 0],
-    gripInset: 0.05,
+    // Declared, not measured. The measurement looks for a handle at one end
+    // of the object; a drill's is a stub under the middle of the body with a
+    // battery on the bottom of it, so the search found the battery and the
+    // tool was carried by its foot with the chuck over the player's shoulder.
+    gripAt: [0.5, 0.26, 0.44],
   },
 
   sign: {
@@ -587,13 +594,32 @@ export function buildAdoptedWeapon(spec, cfg, assets, mats) {
       src.updateMatrixWorld(true);
       box.setFromObject(src);
     }
-    const gz = box.max.z - inset;
-    // Across the grip, centre on what is actually there at that station rather
-    // than on the object as a whole. A bat is a rod on its own centre line and
-    // the two agree; a chair is held by a leg, and centring the chair puts the
-    // hand in the air a foot from the leg it is supposed to be holding.
-    const gc = sectionCentre(src, gz, Math.max(0.03, (box.max.z - box.min.z) * 0.10));
-    src.position.set(-gc.x, -gc.y, -gz);
+    /*
+     * A grip station given as a fraction of the object, rather than measured.
+     *
+     * The measurement is right for anything with a handle at one end. A power
+     * drill has neither: its handle is a stub under the middle of the body,
+     * with a battery on the bottom of it, so "a little way in from the thin
+     * end" finds the battery and the tool ends up held by its foot with the
+     * chuck pointing over the player's shoulder.
+     */
+    if (cfg.gripAt) {
+      const [fx, fy, fz] = cfg.gripAt;
+      src.position.set(
+        -(box.min.x + (box.max.x - box.min.x) * fx),
+        -(box.min.y + (box.max.y - box.min.y) * fy),
+        -(box.min.z + (box.max.z - box.min.z) * fz),
+      );
+    } else {
+      const gz = box.max.z - inset;
+      // Across the grip, centre on what is actually there at that station
+      // rather than on the object as a whole. A bat is a rod on its own centre
+      // line and the two agree; a chair is held by a leg, and centring the
+      // chair puts the hand in the air a foot from the leg it is supposed to
+      // be holding.
+      const gc = sectionCentre(src, gz, Math.max(0.03, (box.max.z - box.min.z) * 0.10));
+      src.position.set(-gc.x, -gc.y, -gz);
+    }
   } else {
     src.position.set(-centre.x, -box.max.y + sightY, -box.max.z);
   }
