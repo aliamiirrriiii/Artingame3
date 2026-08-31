@@ -25,10 +25,14 @@ export class Sky {
       uSunColor:   { value: new THREE.Color(0xfff4e0) },
       uSunSize:    { value: 0.9993 },  // cos of angular radius
       uSunGlare:   { value: 0.85 },
-      uCloud:      { value: new THREE.Color(0xf2f4f6) },
-      uCloudDark:  { value: new THREE.Color(0x93a3b4) },
+      // Cloud lit by a low sun is warm on top and blue underneath, because
+      // what lights its underside is the sky, not the sun. Neutral white and
+      // neutral grey is what a cloud looks like at noon, and it fought with
+      // the warm key everywhere else in the frame.
+      uCloud:      { value: new THREE.Color(0xfaf2e6) },
+      uCloudDark:  { value: new THREE.Color(0x8496ad) },
       uCloudAmount: { value: 1.0 },
-      uCloudCover: { value: 0.46 },
+      uCloudCover: { value: 0.56 },
       uTime:       { value: 0 },
       uExposure:   { value: 1.0 },
     };

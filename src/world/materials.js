@@ -219,11 +219,14 @@ export class MaterialLibrary {
     this.set('concrete', this.breakup(this._std({
       normalMap: rep(grungeN, 1, 1),
       normalScale: new THREE.Vector2(0.42, 0.42),
-      color: 0x4a4a46,
+      // Concrete is grey, and under a warm key everything neutral drifts
+      // toward the key's colour — so it is mixed slightly cool here to land
+      // neutral on screen rather than yellow.
+      color: 0x47494c,
       roughness: 0.88,
       metalness: 0.0,
       envMapIntensity: 0.35,
-    }), { scale: 11, albedo: 0.30, rough: 0.16, tint: 0xb9b8b2 }));
+    }), { scale: 11, albedo: 0.30, rough: 0.16, tint: 0xacaeb2 }));
 
     this.set('dirt', this.breakup(this._std({
       map: rep(a.tex('grassAlbedo'), 1, 1),
@@ -488,11 +491,14 @@ export class MaterialLibrary {
     this.set('stone', this.breakup(this._std({
       normalMap: rep(grungeN, 1, 1),
       normalScale: new THREE.Vector2(0.22, 0.22),
-      color: 0x7b766c,
-      roughness: 0.74,
+      // Weathered cast stone, not fresh limestone. Painted any lighter it
+      // clips under the sun and the trim reads as polystyrene — which is
+      // exactly what a plaza full of pale boxes looked like.
+      color: 0x6c675e,
+      roughness: 0.80,
       metalness: 0,
-      envMapIntensity: 0.45,
-    }), { scale: 9, albedo: 0.20, rough: 0.14, tint: 0xd8d4c8 }));
+      envMapIntensity: 0.38,
+    }), { scale: 9, albedo: 0.24, rough: 0.16, tint: 0xb2b3b2 }));
 
     // Shop awnings and tarpaulins. Lit from one side only in the real world;
     // here it is double-sided because you walk under them.

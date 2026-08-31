@@ -648,28 +648,97 @@ export class Level {
     }
   }
 
+  /**
+   * The plaza.
+   *
+   * Everything here is at the dead centre of the map and every fight ends up
+   * looking at it, so it is worth more geometry than anywhere else. The
+   * fountain was two cylinders and a box, which from ten metres reads as a
+   * traffic cone on a bollard; it is now a basin with a coping you can see
+   * the thickness of, a moulded pedestal, an upper dish, and a figure on top
+   * with enough of a silhouette to be a statue rather than a lump.
+   */
   _buildPlaza() {
-    // Fountain: the anchor of the whole map and the best place to hold.
-    this.cylinder('concrete', 0, 0.06, 0, 5.2, 5.6, 1.0, { seg: 24, collide: true, tag: 'cover' });
-    this.cylinder('concrete', 0, 1.0, 0, 4.6, 4.6, 0.15, { seg: 24 });
-    this.cylinder('concrete', 0, 1.1, 0, 0.7, 1.1, 2.4, { seg: 12, collide: true, tag: 'cover' });
-    this.cylinder('water', 0, 1.05, 0, 4.4, 4.4, 0.06, { seg: 24 });
+    const detail = this.preset.worldDetail ?? 2;
+    const r = this.rng;
 
-    // A dead statue on top, because every plaza has one.
-    this.cylinder('rust', 0, 3.5, 0, 0.35, 0.5, 1.8, { seg: 8 });
-    this.box('rust', 0, 5.3, 0, 0.9, 0.9, 0.5, { collide: false });
+    if (detail >= 1) {
+      // Paving joints across the apron, so the plaza floor is flags rather
+      // than a single poured sheet twenty-six metres across.
+      for (let i = -6; i <= 6; i++) {
+        this.box('asphalt', i * 2.1, 0.058, 0, 0.05, 0.02, 26, { collide: false });
+        this.box('asphalt', 0, 0.058, i * 2.1, 26, 0.02, 0.05, { collide: false });
+      }
+    }
+
+    // Basin: wall, coping you can read the thickness of, and the step round it.
+    this.cylinder('stone', 0, 0, 0, 5.9, 6.1, 0.22, { seg: 32 });
+    this.cylinder('concrete', 0, 0.20, 0, 5.2, 5.55, 0.86, { seg: 32, collide: true, tag: 'cover' });
+    this.cylinder('stone', 0, 1.02, 0, 5.35, 5.35, 0.20, { seg: 32 });
+    this.cylinder('stone', 0, 1.22, 0, 5.05, 5.20, 0.10, { seg: 32 });
+
+    // What is left in the bottom of it: stagnant water, not a working jet.
+    this.cylinder('water', 0, 0.38, 0, 4.9, 4.9, 0.05, { seg: 32 });
+
+    // Pedestal: base, shaft, cap. Three pieces is the whole difference
+    // between a column and a pipe.
+    this.cylinder('stone', 0, 0.42, 0, 1.35, 1.5, 0.34, { seg: 16, collide: true, tag: 'cover' });
+    this.cylinder('stone', 0, 0.76, 0, 0.78, 1.05, 1.95, { seg: 16, collide: true, tag: 'cover' });
+    this.cylinder('stone', 0, 2.71, 0, 1.15, 0.92, 0.26, { seg: 16 });
+    // The upper dish the water used to fall from.
+    this.cylinder('stone', 0, 2.97, 0, 2.0, 1.2, 0.34, { seg: 20 });
+    this.cylinder('stone', 0, 3.31, 0, 1.9, 1.9, 0.12, { seg: 20 });
+
+    this._statue(0, 3.43);
 
     // Planters ringing the plaza — waist-high cover you can shoot over.
     for (let i = 0; i < 8; i++) {
       const a = (i / 8) * TAU + 0.39;
       const px = Math.cos(a) * 11, pz = Math.sin(a) * 11;
-      this.box('concrete', px, 0.06, pz, 2.6, 0.85, 2.6, { rotY: a, tag: 'cover' });
-      this.ground('dirt', px, pz, 2.2, 2.2, { y: 0.92 });
+      this.box('stone', px, 0, pz, 2.6, 0.72, 2.6, { rotY: a, tag: 'cover' });
+      // Coping: the rim you would sit on, and the reason the box reads as a
+      // planter and not as a crate.
+      this.box('stone', px, 0.72, pz, 2.86, 0.16, 2.86, { rotY: a, collide: false });
+      this.ground('dirt', px, pz, 2.35, 2.35, { y: 0.875, rotY: a });
+      if (detail >= 1) {
+        // Long dead, and full of whatever blew into it since.
+        for (let k = 0; k < 7; k++) {
+          this._weeds(px + r.range(-0.85, 0.85), pz + r.range(-0.85, 0.85),
+            r.range(0.4, 0.85), r.range(0.35, 0.8), 2, 0.88);
+        }
+        if (r.next() < 0.5) {
+          this.cylinder('wood', px + r.range(-0.5, 0.5), 0.88, pz + r.range(-0.5, 0.5),
+            0.05, 0.08, r.range(1.1, 1.9), { seg: 5 });
+        }
+      }
     }
 
     // Overturned squad car in the middle of the plaza, still burning.
     this._car(-8.5, 6.5, 0.7, true);
     this._car(9, -7.5, -1.9, false);
+  }
+
+  /**
+   * A weathered bronze figure. Crude up close and correct from anywhere you
+   * will actually see it: what makes a statue read at twenty metres is the
+   * silhouette — a standing figure with its weight on one leg and one arm
+   * out — not the modelling.
+   */
+  _statue(x, base) {
+    const z = 0;
+    this.cylinder('rust', x, base, z, 0.62, 0.7, 0.22, { seg: 12 });
+    // Legs, one straight and one bent back.
+    this.cylinder('rust', x - 0.16, base + 0.22, z, 0.13, 0.17, 1.05, { seg: 8 });
+    this.cylinder('rust', x + 0.18, base + 0.22, z + 0.10, 0.12, 0.16, 0.98, { seg: 8 });
+    // Torso, tapering, and the coat over it.
+    this.cylinder('rust', x, base + 1.20, z, 0.30, 0.24, 0.92, { seg: 10 });
+    this.box('rust', x, base + 1.28, z - 0.06, 0.62, 0.80, 0.36, { rotY: 0.2, collide: false });
+    // Arms: one down at the side, one raised across the body.
+    this.box('rust', x - 0.36, base + 1.24, z, 0.16, 0.80, 0.17, { rotY: 0.15, collide: false });
+    this.box('rust', x + 0.40, base + 1.72, z + 0.16, 0.62, 0.15, 0.16, { rotY: -0.5, collide: false });
+    // Head and shoulders.
+    this.cylinder('rust', x, base + 2.12, z, 0.19, 0.17, 0.30, { seg: 8 });
+    this.cylinder('rust', x, base + 2.42, z, 0.05, 0.22, 0.12, { seg: 8 });
   }
 
   /** Procedural wrecked car: body, cabin, wheels, blown-out glass. */
@@ -764,7 +833,30 @@ export class Level {
       const x = Math.cos(a) * rad, z = Math.sin(a) * rad;
       if (this._occupied(x, z, 2.2)) continue;
       if (r.next() < 0.35) {
-        this.box('rust', x, 0, z, 2.4, 1.5, 1.3, { rotY: r.range(0, TAU), tag: 'cover' });
+        // A dumpster, not a rusty box. The lid, the ribs down the sides and
+        // the four little castors are what stop it reading as a cube someone
+        // painted orange, and they cost about thirty triangles.
+        const rot = r.range(0, TAU);
+        const cs = Math.cos(rot), sn = Math.sin(rot);
+        this.box('rust', x, 0.28, z, 2.4, 1.25, 1.3, { rotY: rot, tag: 'cover' });
+        for (let k = -2; k <= 2; k++) {
+          this.box('rust', x + cs * k * 0.5, 0.30, z + sn * k * 0.5,
+            0.09, 1.18, 1.36, { rotY: rot, collide: false });
+        }
+        const lidUp = r.next() < 0.4;
+        if (lidUp) {
+          this.box('paintedMetal', x - cs * 1.16, 1.53, z - sn * 1.16,
+            0.10, 1.20, 1.34, { rotY: rot, collide: false });
+        } else {
+          this.box('paintedMetal', x, 1.53, z, 2.44, 0.10, 1.36,
+            { rotY: rot, collide: false });
+        }
+        for (const [ox, oz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+          this.cylinder('gunPolymer',
+            x + cs * ox * 0.95 - sn * oz * 0.5, 0,
+            z + sn * ox * 0.95 + cs * oz * 0.5,
+            0.14, 0.14, 0.28, { seg: 8 });
+        }
       } else {
         const s = r.range(0.8, 1.35);
         this.box('wood', x, 0, z, s, s, s, { rotY: r.range(0, TAU), tag: 'cover' });
@@ -1053,12 +1145,12 @@ export class Level {
    * costs two triangles and removes the angle at which a crossed pair goes
    * edge-on and disappears.
    */
-  _weeds(x, z, w, h, cards = 3) {
+  _weeds(x, z, w, h, cards = 3, y = 0) {
     const batch = this._batch('foliage');
     const spin = this.rng.range(0, TAU);
     for (let i = 0; i < cards; i++) {
       const g = new THREE.PlaneGeometry(w, h);
-      g.translate(0, h / 2, 0);
+      g.translate(0, y + h / 2, 0);
       g.rotateY(spin + (i / cards) * Math.PI);
       g.translate(x, 0, z);
       batch.push(g);

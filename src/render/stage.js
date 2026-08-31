@@ -97,7 +97,7 @@ export class Stage {
      * as one grey mass. It also warms up: low sun is filtered through much
      * more air, so the key goes amber and the fill it leaves behind goes blue.
      */
-    this.sun = new THREE.DirectionalLight(0xffe4be, 2.5);
+    this.sun = new THREE.DirectionalLight(0xffeed4, 2.4);
     this.sun.position.set(...SUN_OFFSET);
     this.sun.castShadow = p.shadows;
     const s = this.sun.shadow;
