@@ -193,6 +193,24 @@ export class Stage {
     this.fogColor = new THREE.Color(fog);
   }
 
+  /**
+   * Roughly how much light lands on a horizontal surface out in the open,
+   * in the renderer's linear working space.
+   *
+   * Decals that are drawn rather than lit — blood, mostly — multiply their
+   * albedo by this so they sit at the same brightness as the ground they are
+   * on, and follow it when a boss wave retints the whole frame.
+   */
+  lightLevel(out = new THREE.Color()) {
+    out.copy(this.sun.color).multiplyScalar(this.sun.intensity * 0.55);
+    out.r += this.hemi.color.r * this.hemi.intensity * 0.55;
+    out.g += this.hemi.color.g * this.hemi.intensity * 0.55;
+    out.b += this.hemi.color.b * this.hemi.intensity * 0.55;
+    // Image-based ambient is not in either light, so allow for it.
+    const env = this.scene.environmentIntensity || 1;
+    return out.multiplyScalar(0.55 + env * 0.3);
+  }
+
   setMood(mood) {
     // Called on boss waves and power-ups to re-tint the whole frame.
     const { fog, fogDensity, sunColor, sunIntensity, exposure } = mood;

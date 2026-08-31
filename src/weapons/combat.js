@@ -374,9 +374,7 @@ export class Combat {
     p.active = false;
     p.mesh.visible = false;
     this.fx.explosion(p.pos, 1.4, 0x6aff3a);
-    this.fx.bloodDecals.place(
-      { x: p.pos.x, y: 0.02, z: p.pos.z }, UP, 1.5, 0x2a4a12, 18,
-    );
+    this.fx.bloodDecals.place(p.pos.x, 0.02, p.pos.z, 0, 1, 0, 1.5, 0x2a4a12, 0.8, 18);
     audio.explosion(p.pos, 0.3);
     // Lingering pool that hurts if you stand in it.
     const d = this.player.pos.distanceTo(p.pos);
@@ -1093,4 +1091,3 @@ export class Combat {
   }
 }
 
-const UP = new THREE.Vector3(0, 1, 0);

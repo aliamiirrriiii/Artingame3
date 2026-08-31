@@ -128,6 +128,98 @@ export class CollisionWorld {
   }
 
   /**
+   * Segment sweep for a point-sized body, accelerated by the grid.
+   *
+   * `raycast` walks every box in the level, which is right for a bullet fired
+   * a few times a second and badly wrong for two hundred blood droplets asking
+   * every frame. This walks only the cells the segment passes near, and writes
+   * into a caller-owned result so a full frame of droplet collision allocates
+   * nothing.
+   *
+   * Returns the fraction along the segment at which it hit, or -1.
+   */
+  sweepPoint(px, py, pz, qx, qy, qz, out) {
+    const dx = qx - px, dy = qy - py, dz = qz - pz;
+    const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (len < 1e-6) return -1;
+
+    const scratch = this._sweepNear || (this._sweepNear = []);
+    this.near((px + qx) * 0.5, (pz + qz) * 0.5, len * 0.5 + 0.5, scratch);
+
+    let best = 1;
+    let hit = null, hitAxis = -1, hitSign = 1;
+
+    for (let i = 0; i < scratch.length; i++) {
+      const b = scratch[i];
+      // Vertical reject first: most boxes in a cell are the wrong height.
+      if (Math.max(py, qy) < b.y0 || Math.min(py, qy) > b.y1) continue;
+
+      const ox = px - b.cx, oz = pz - b.cz;
+      const lox = ox * b.cos + oz * b.sin;
+      const loz = -ox * b.sin + oz * b.cos;
+      const ldx = dx * b.cos + dz * b.sin;
+      const ldz = -dx * b.sin + dz * b.cos;
+
+      let tmin = 0, tmax = best;
+      let axis = -1, sign = 1;
+
+      if (Math.abs(ldx) < 1e-9) {
+        if (Math.abs(lox) > b.hx) continue;
+      } else {
+        const inv = 1 / ldx;
+        let t1 = (-b.hx - lox) * inv, t2 = (b.hx - lox) * inv, s = -1;
+        if (t1 > t2) { const t = t1; t1 = t2; t2 = t; s = 1; }
+        if (t1 > tmin) { tmin = t1; axis = 0; sign = s; }
+        if (t2 < tmax) tmax = t2;
+        if (tmin > tmax) continue;
+      }
+
+      if (Math.abs(dy) < 1e-9) {
+        if (py < b.y0 || py > b.y1) continue;
+      } else {
+        const inv = 1 / dy;
+        let t1 = (b.y0 - py) * inv, t2 = (b.y1 - py) * inv, s = -1;
+        if (t1 > t2) { const t = t1; t1 = t2; t2 = t; s = 1; }
+        if (t1 > tmin) { tmin = t1; axis = 1; sign = s; }
+        if (t2 < tmax) tmax = t2;
+        if (tmin > tmax) continue;
+      }
+
+      if (Math.abs(ldz) < 1e-9) {
+        if (Math.abs(loz) > b.hz) continue;
+      } else {
+        const inv = 1 / ldz;
+        let t1 = (-b.hz - loz) * inv, t2 = (b.hz - loz) * inv, s = -1;
+        if (t1 > t2) { const t = t1; t1 = t2; t2 = t; s = 1; }
+        if (t1 > tmin) { tmin = t1; axis = 2; sign = s; }
+        if (t2 < tmax) tmax = t2;
+        if (tmin > tmax) continue;
+      }
+
+      if (tmin >= 0 && tmin < best) {
+        best = tmin; hit = b; hitAxis = axis; hitSign = sign;
+      }
+    }
+
+    if (!hit) return -1;
+
+    out.t = best;
+    out.box = hit;
+    out.x = px + dx * best;
+    out.y = py + dy * best;
+    out.z = pz + dz * best;
+    if (hitAxis === 1) { out.nx = 0; out.ny = hitSign; out.nz = 0; }
+    else if (hitAxis === 0) {
+      hit.toWorldDir(hitSign, 0, _d);
+      out.nx = _d.x; out.ny = 0; out.nz = _d.z;
+    } else {
+      hit.toWorldDir(0, hitSign, _d);
+      out.nx = _d.x; out.ny = 0; out.nz = _d.z;
+    }
+    return best;
+  }
+
+  /**
    * Slab-method ray/OBB test across every box. Returns the nearest hit or null.
    * Used for bullets, line-of-sight and viewmodel wall pull-back.
    */

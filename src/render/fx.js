@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Pool, rand, randInt, gauss, clamp, TAU } from '../core/util.js';
+import { MarkField, PoolField, RunnerField, makeSplatTexture } from './blood.js';
 
 /**
  * All transient visuals: particles, gore chunks, decals, tracers and impact
@@ -87,6 +88,17 @@ class ParticleField {
     this.gravScale = new Float32Array(capacity);
     this.bounce = new Uint8Array(capacity);
     this.fadeIn = new Float32Array(capacity);
+    // Particles flagged `wet` are swept against the level each step and die
+    // where they hit, reporting the impact so something can be left behind.
+    this.wet = new Uint8Array(capacity);
+
+    /** @type {{sweepPoint(px,py,pz,qx,qy,qz,out): number}|null} */
+    this.solid = null;
+    /** Ground height; wet particles that fall through it land. */
+    this.floorY = 0.015;
+    /** @type {((x,y,z,nx,ny,nz,speed,size)=>void)|null} */
+    this.onLand = null;
+    this._sweep = { t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 0, box: null };
 
     const g = new THREE.BufferGeometry();
     this.aPos = new THREE.BufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage);
@@ -147,6 +159,7 @@ class ParticleField {
     this.grow[i] = o.grow ?? 0;
     this.gravScale[i] = o.gravity ?? 1;
     this.bounce[i] = o.bounce ? 1 : 0;
+    this.wet[i] = o.wet ? 1 : 0;
     this.fadeIn[i] = o.fadeIn ?? 0.06;
     this.r0[i] = o.r0; this.g0[i] = o.g0; this.b0[i] = o.b0;
     this.r1[i] = o.r1 ?? o.r0; this.g1[i] = o.g1 ?? o.g0; this.b1[i] = o.b1 ?? o.b0;
@@ -171,9 +184,17 @@ class ParticleField {
       vel[i3] *= d;
       vel[i3 + 1] = vel[i3 + 1] * d + this.gravity * this.gravScale[i] * dt;
       vel[i3 + 2] *= d;
+      const px = pos[i3], py = pos[i3 + 1], pz = pos[i3 + 2];
       pos[i3] += vel[i3] * dt;
       pos[i3 + 1] += vel[i3 + 1] * dt;
       pos[i3 + 2] += vel[i3 + 2] * dt;
+
+      if (this.wet[i] && this._land(i, px, py, pz, dt)) {
+        n--;
+        if (i !== n) this._move(n, i);
+        i--;
+        continue;
+      }
 
       if (this.bounce[i] && pos[i3 + 1] < 0.02) {
         pos[i3 + 1] = 0.02;
@@ -204,6 +225,50 @@ class ParticleField {
     this.points.visible = n > 0;
   }
 
+  /**
+   * Sweeps one wet particle over the step it just took. Returns true when it
+   * struck something, having already reported where and how hard.
+   *
+   * The sweep runs against the collision boxes rather than the render meshes,
+   * so a droplet crossing a car bonnet costs a handful of slab tests. Testing
+   * the segment rather than the end point matters: a droplet leaving a
+   * shotgun blast covers most of a metre in one frame and would otherwise
+   * pass straight through a wall.
+   */
+  _land(i, px, py, pz, dt) {
+    const i3 = i * 3;
+    const qx = this.pos[i3], qy = this.pos[i3 + 1], qz = this.pos[i3 + 2];
+    let hx = 0, hy = 0, hz = 0, nx = 0, ny = 1, nz = 0;
+    let hit = false;
+
+    if (this.solid) {
+      const t = this.solid.sweepPoint(px, py, pz, qx, qy, qz, this._sweep);
+      if (t >= 0) {
+        const w = this._sweep;
+        hx = w.x; hy = w.y; hz = w.z;
+        nx = w.nx; ny = w.ny; nz = w.nz;
+        hit = true;
+      }
+    }
+
+    if (qy <= this.floorY && (!hit || hy > this.floorY)) {
+      // Fraction of the step at which it crossed the floor, so fast spray
+      // lands where it was going rather than under where it started.
+      const span = py - qy;
+      const f = span > 1e-6 ? clamp((py - this.floorY) / span, 0, 1) : 0;
+      hx = px + (qx - px) * f;
+      hy = this.floorY;
+      hz = pz + (qz - pz) * f;
+      nx = 0; ny = 1; nz = 0;
+      hit = true;
+    }
+
+    if (!hit) return false;
+    const speed = Math.hypot(this.vel[i3], this.vel[i3 + 1], this.vel[i3 + 2]);
+    this.onLand?.(hx, hy, hz, nx, ny, nz, speed, this.baseSize[i]);
+    return true;
+  }
+
   _move(from, to) {
     const f3 = from * 3, t3 = to * 3, f4 = from * 4, t4 = to * 4;
     for (let k = 0; k < 3; k++) {
@@ -219,6 +284,7 @@ class ParticleField {
     this.grow[to] = this.grow[from];
     this.gravScale[to] = this.gravScale[from];
     this.bounce[to] = this.bounce[from];
+    this.wet[to] = this.wet[from];
     this.fadeIn[to] = this.fadeIn[from];
     this.r0[to] = this.r0[from]; this.g0[to] = this.g0[from]; this.b0[to] = this.b0[from];
     this.r1[to] = this.r1[from]; this.g1[to] = this.g1[from]; this.b1[to] = this.b1[from];
@@ -379,6 +445,11 @@ class GibField {
     this._pv = new THREE.Vector3();
     this._sv = new THREE.Vector3();
     this.onLand = null;
+    /** @type {{sweepPoint(px,py,pz,qx,qy,qz,out): number}|null} */
+    this.solid = null;
+    /** Called where a chunk strikes something that is not the ground. */
+    this.onSplat = null;
+    this._sweep = { t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 0, box: null };
   }
 
   spawn(x, y, z, vx, vy, vz, scale = 1, ttl = 6) {
@@ -407,11 +478,35 @@ class GibField {
       }
       const i3 = i * 3;
       this.v[i3 + 1] -= 17 * dt;
+      const ox = this.p[i3], oy = this.p[i3 + 1], oz = this.p[i3 + 2];
       this.p[i3] += this.v[i3] * dt;
       this.p[i3 + 1] += this.v[i3 + 1] * dt;
       this.p[i3 + 2] += this.v[i3 + 2] * dt;
 
       const r = 0.07 * this.scale[i];
+
+      // Walls, cars, barricades. A chunk that slides through the level is the
+      // single clearest tell that none of this is simulated, and a chunk that
+      // slaps a wall and drops sells the opposite.
+      if (this.solid) {
+        const w = this._sweep;
+        if (this.solid.sweepPoint(ox, oy, oz, this.p[i3], this.p[i3 + 1], this.p[i3 + 2], w) >= 0) {
+          const speed = Math.hypot(this.v[i3], this.v[i3 + 1], this.v[i3 + 2]);
+          this.p[i3] = w.x + w.nx * r;
+          this.p[i3 + 1] = w.y + w.ny * r;
+          this.p[i3 + 2] = w.z + w.nz * r;
+          const dot = this.v[i3] * w.nx + this.v[i3 + 1] * w.ny + this.v[i3 + 2] * w.nz;
+          // Meat does not bounce well: most of the energy goes into the splat.
+          this.v[i3] = (this.v[i3] - 2 * dot * w.nx) * 0.22;
+          this.v[i3 + 1] = (this.v[i3 + 1] - 2 * dot * w.ny) * 0.22;
+          this.v[i3 + 2] = (this.v[i3 + 2] - 2 * dot * w.nz) * 0.22;
+          this.spin[i3] *= 0.4; this.spin[i3 + 1] *= 0.4; this.spin[i3 + 2] *= 0.4;
+          if (speed > 2.5 && this.onSplat) {
+            this.onSplat(w.x, w.y, w.z, w.nx, w.ny, w.nz, speed);
+          }
+        }
+      }
+
       if (this.p[i3 + 1] < r) {
         if (this.v[i3 + 1] < -1.2 && this.onLand) {
           this.onLand(this.p[i3], r, this.p[i3 + 2]);
@@ -552,27 +647,94 @@ export class Effects {
     this.fields = [this.sparks, this.smoke, this.blood, this.dust];
 
     this.bulletDecals = new DecalField(scene, assets.tex('decalAlbedo'), Math.floor(preset.decalBudget * 0.55));
-    this.bloodDecals = new DecalField(scene, assets.tex('disc'), Math.floor(preset.decalBudget * 0.75));
+
+    // Blood: marks where it landed, pools where it gathered, runners for what
+    // is still on its way down a wall.
+    const splatTex = makeSplatTexture(256);
+    // Generous budgets: these are one instanced draw call each, and blood is
+    // the record of the fight. A budget that recycles after a single burst
+    // erases the room you just cleared while you are still standing in it.
+    this.bloodDecals = new MarkField(scene, splatTex, preset.decalBudget * 3);
+    this.pools = new PoolField(scene, splatTex, clamp(Math.round(preset.decalBudget * 0.6), 24, 96));
+    // Few runners on purpose. Each one lays a trail of marks as it goes, so
+    // a generous cap here quietly evicts every other mark in the level.
+    this.runners = new RunnerField(preset.decalBudget > 120 ? 16 : 8);
+
+    // Droplets stop where they hit the world, and what they hit decides what
+    // they leave: a wet mark on any surface, volume in the pool below when
+    // that surface is the ground, and a run when it is a wall.
+    this.blood.onLand = (x, y, z, nx, ny, nz, speed, size) => {
+      // A droplet is a droplet: centimetres across, not half a metre. The
+      // faster it was travelling the more it spreads on impact, but the whole
+      // range stays small — the spray reads as spray because the marks are
+      // small enough that the pattern, not the individual mark, is what you
+      // see.
+      const scale = clamp(0.050 + size * 1.6 + speed * 0.014, 0.050, 0.22);
+      this.bloodDecals.place(
+        x, y, z, nx, ny, nz, scale,
+        // Light for one mark: multiply blending compounds, so a value that
+        // looks right alone turns a dense patch into a black hole in the wall.
+        // These are mixed to stack into deep red rather than to black.
+        0x5f2419, clamp(0.42 + speed * 0.026, 0.42, 0.85), rand(26, 40),
+      );
+      if (ny > 0.7) {
+        this.pools.add(x, z, 0.05 + size * 3.4, 55, 0.16);
+      } else if (y > 0.5 && Math.random() < 0.10) {
+        this.runners.spawn(x, y, z, nx, nz, rand(0.028, 0.058), 0.05);
+      }
+    };
 
     const gibMat = new THREE.MeshStandardMaterial({
       color: 0x5e1010, roughness: 0.55, metalness: 0.0, envMapIntensity: 0.7,
     });
     this.gibs = new GibField(scene, 120, gibMat);
+    this.gibs.onSplat = (x, y, z, nx, ny, nz, speed) => {
+      this.bloodDecals.place(
+        x, y, z, nx, ny, nz, clamp(0.10 + speed * 0.016, 0.10, 0.38),
+        0x54190f, 0.7, 30,
+      );
+      if (ny < 0.6 && y > 0.6) this.runners.spawn(x, y, z, nx, nz, 0.09, 0.06);
+    };
     this.gibs.onLand = (x, y, z) => {
-      if (Math.random() < 0.5) {
-        this.bloodDecals.place(
-          { x, y: 0.02, z }, UP, rand(0.5, 1.1), 0xc4665a, 26,
-        );
-      }
+      this.bloodDecals.place(x, 0.02, z, 0, 1, 0, rand(0.18, 0.42), 0x54190f, 0.7, 26);
+      this.pools.add(x, z, rand(0.35, 0.9), 55, 0.5);
     };
 
     this.tracers = new TracerField(scene, 160);
 
     this._v = new THREE.Vector3();
+
+    // Bound once: `update` runs every frame and closures allocated there show
+    // up as garbage-collector sawtooth on a phone.
+    this._runMark = (x, y, z, nx, nz, w, h) => {
+      this.bloodDecals.streak(x, y, z, nx, nz, w, h, 0x4b1611, 0.72, 30);
+    };
+    this._runLand = (x, z, vol) => this.pools.add(x, z, vol);
   }
 
   setFog(color, density) {
     for (const f of this.fields) f.setFog(color, density);
+    this.bloodDecals.setFog(color, density);
+    this.pools.setFog(color, density);
+  }
+
+  /**
+   * The level's light level, so blood tracks the scene's exposure instead of
+   * being a fixed colour that is too dark at noon and glowing at dusk.
+   */
+  setLighting(color) {
+    this.bloodDecals.setLight(color.r, color.g, color.b);
+    this.pools.setLight(color.r, color.g, color.b);
+  }
+
+  /**
+   * Hands the level's collision world to everything that has to bounce off it.
+   * Called once the level exists — effects are built before it does.
+   */
+  setCollision(collision) {
+    this.collision = collision || null;
+    this.blood.solid = this.collision;
+    this.gibs.solid = this.collision;
   }
 
   setViewportHeight(h) {
@@ -664,8 +826,11 @@ export class Effects {
         vx: dir.x * rand(1, 6) * power + gauss() * 1.9,
         vy: dir.y * rand(1, 5) * power + gauss() * 1.9 + 1.2,
         vz: dir.z * rand(1, 6) * power + gauss() * 1.9,
-        life: rand(0.5, 1.3), size: rand(0.030, 0.085) * (crit ? 1.4 : 1),
-        drag: 0.9, gravity: 2.4, bounce: false, fadeIn: 0.03,
+        life: rand(0.9, 2.2), size: rand(0.030, 0.085) * (crit ? 1.4 : 1),
+        // Wet: this droplet is going to land somewhere and stay there. The
+        // long life is deliberate — it is the sweep that ends it, not a timer,
+        // and blood thrown across a street should reach the far wall.
+        drag: 0.55, gravity: 2.6, wet: true, fadeIn: 0.02,
         r0: 0.50, g0: 0.030, b0: 0.026, r1: 0.13, g1: 0.008, b1: 0.008,
       });
     }
@@ -707,12 +872,29 @@ export class Effects {
    * through asphalt.
    */
   bloodPool(x, z, size = 1.4) {
-    this.bloodDecals.place({ x, y: 0.02, z }, UP, size, 0xb8503f, 40);
+    // Callers still think in radius; the pool thinks in volume, and spreading
+    // from a volume is what makes it grow instead of appearing full-formed.
+    this.pools.add(x, z, (size / 0.52) ** 2);
   }
 
   /** Wall splatter behind a zombie that just took a heavy hit. */
   bloodSplat(point, normal, size = 0.8) {
-    this.bloodDecals.place(point, normal, size, 0xc25a49, 30);
+    this.bloodDecals.place(
+      point.x, point.y, point.z, normal.x, normal.y, normal.z,
+      size, 0x54190f, 0.86, 34,
+    );
+    // Anything that hits a wall this hard runs.
+    if (normal.y < 0.6 && point.y > 0.6) {
+      const runs = size > 1.2 ? 3 : size > 0.7 ? 2 : 1;
+      for (let i = 0; i < runs; i++) {
+        this.runners.spawn(
+          point.x + gauss() * size * 0.22,
+          point.y + gauss() * size * 0.22,
+          point.z + gauss() * size * 0.22,
+          normal.x, normal.z, rand(0.05, 0.12) * (1 + size), size * 0.5,
+        );
+      }
+    }
   }
 
   explosion(pos, radius = 4, color = 0xff8a30) {
@@ -814,6 +996,8 @@ export class Effects {
     this.tracers.update(dt);
     this.bulletDecals.update(dt);
     this.bloodDecals.update(dt);
+    this.runners.update(dt, this._runMark, this._runLand);
+    this.pools.update(dt);
   }
 
   clear() {
@@ -822,6 +1006,8 @@ export class Effects {
     this.tracers.clear();
     this.bulletDecals.clear();
     this.bloodDecals.clear();
+    this.runners.clear();
+    this.pools.clear();
   }
 }
 

@@ -168,12 +168,16 @@ class Game {
       this.stage.onMood = (stage) => {
         this.sky.matchFog(stage.fogColor);
         this.effects?.setFog(stage.fogColor, stage.scene.fog.density);
+        this.effects?.setLighting(stage.lightLevel());
       };
 
       this.materials = new MaterialLibrary(this.assets);
       this.level = new Level(this.stage.scene, this.materials, this.assets, this.preset).build();
       this.effects = new Effects(this.stage.scene, this.assets, this.preset);
+      // Blood and gibs sweep against the level, so they need it.
+      this.effects.setCollision(this.level.collision);
       this.effects.setFog(this.stage.fogColor, this.stage.fogDensity);
+      this.effects.setLighting(this.stage.lightLevel());
       // Improvised weapons, scattered where the navigation says you can walk.
       // They register themselves as stations, so the prompt, the E key and the
       // touch button pick them up without knowing what they are.
@@ -715,6 +719,7 @@ class Game {
     this.zombies.setMaxAlive(this.preset.maxZombies);
     this.zombies.prewarm(this.preset.maxZombies);
     this.effects.setFog(this.stage.fogColor, this.stage.fogDensity);
+    this.effects.setLighting(this.stage.lightLevel());
     this.sky.matchFog(this.stage.fogColor);
     this.sky.setQuality(this.preset);
     this._applySettings();

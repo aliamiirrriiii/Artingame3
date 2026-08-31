@@ -35,6 +35,9 @@ try {
   const mats = new MaterialLibrary(assets);
   const level = new Level(stage.scene, mats, assets, preset).build();
   const fx = new Effects(stage.scene, assets, preset);
+  fx.setCollision(level.collision);
+  fx.setFog(stage.fogColor, stage.fogDensity);
+  fx.setLighting(stage.lightLevel());
   const zm = new ZombieManager(stage.scene, assets, level, fx, preset);
   report.steps.push('init');
 
