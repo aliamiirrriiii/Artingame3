@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { WEAPONS } from '../weapons/arsenal.js';
 import { MODEL_VIEWMODELS, buildAdoptedWeapon } from '../weapons/viewmodels.js';
+import { buildWeapon } from '../weapons/gunsmith.js';
 import { rand, randInt, clamp } from '../core/util.js';
 
 /**
@@ -32,11 +33,9 @@ export class Pickups {
     this._v = new THREE.Vector3();
   }
 
-  /** Every melee weapon that has a model to lie on the ground. */
+  /** Every melee weapon that can be found rather than bought. */
   static kinds() {
-    return Object.values(WEAPONS).filter(
-      (w) => w.kind === 'melee' && w.pickup > 0 && MODEL_VIEWMODELS[w.model.type],
-    );
+    return Object.values(WEAPONS).filter((w) => w.kind === 'melee' && w.pickup > 0);
   }
 
   /**
@@ -88,8 +87,12 @@ export class Pickups {
   }
 
   _place(spec, at, rng) {
+    // Scanned props go down the adopted path; the built ones through the
+    // gunsmith. Either way what lands on the ground is the same model the
+    // player will be holding a second later.
     const cfg = MODEL_VIEWMODELS[spec.model.type];
-    const g = buildAdoptedWeapon(spec, cfg, this.assets, this.mats);
+    const g = (cfg && buildAdoptedWeapon(spec, cfg, this.assets, this.mats))
+      || buildWeapon(spec, this.mats);
     if (!g) return;
 
     // Undo the first-person carry: on the ground it lies down and is seen from

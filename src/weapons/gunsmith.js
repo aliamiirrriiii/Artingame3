@@ -834,10 +834,97 @@ function buildRailgun(f) {
   return -0.526;
 }
 
+/*
+ * -------------------------------------------------------------- melee
+ *
+ * The lethal end of the improvised arsenal. Where the scanned props are
+ * whatever was lying around, these are things somebody keeps for a reason: a
+ * blade, an axe, a hammer. They are also far easier to build than a firearm —
+ * a machete is one tapered slab and a handle — so they are built rather than
+ * downloaded.
+ *
+ * All three point down -Z with the grip on the origin, and set `f.gripAt` so
+ * the hands rig has something to close on.
+ */
+
+/** A shaft with a wrapped grip, the common half of an axe and a hammer. */
+function haft(f, { len, r = 0.017, mat = 'meleeWood', wrap = 0.20 }) {
+  f.add(mat, rod(r, len, r * 0.86, 12), 0, 0, -len / 2 + 0.06);
+  // Wrapped grip at the butt, and a swelled knob so it cannot slide out.
+  f.add('gunGrip', rod(r * 1.16, wrap, r * 1.16, 12), 0, 0, 0.06 - wrap / 2);
+  for (let i = 0; i < 7; i++) {
+    f.add('gunGrip', ring(r * 1.2, 0.0022, 10), 0, 0, 0.045 - i * (wrap - 0.03) / 6, 0, 0, 0);
+  }
+  f.add('gunGrip', rod(r * 1.34, 0.016, r * 1.20, 12), 0, 0, 0.062);
+}
+
+function buildMachete(f) {
+  const L = 0.44;                       // blade
+  f.gripAt = { x: 0, y: 0, z: 0.02, rake: 0 };
+
+  // Blade: a long slab that widens toward the tip, which is what a machete is
+  // for — the mass wants to be out at the end of the swing, not at the hand.
+  f.add('gunBlued', slab(0.0040, 0.052, L, { r: 0.004, bevel: 0.0012 }), 0, 0.010, -0.06 - L / 2);
+  f.add('gunBlued', slab(0.0044, 0.070, L * 0.34, { r: 0.010, bevel: 0.0012 }),
+    0, 0.016, -0.06 - L * 0.82);
+  // Ground edge along the bottom: a second, thinner slab reads as a bevel.
+  f.add('meleeAlu', slab(0.0018, 0.014, L * 0.96, { r: 0.001, bevel: 0.0006 }),
+    0, -0.014, -0.06 - L / 2);
+  // Spine ridge.
+  f.add('gunBlued', slab(0.0062, 0.008, L * 0.9, { r: 0.001 }), 0, 0.032, -0.06 - L / 2);
+
+  // Bolster and handle.
+  f.add('meleeSteel', slab(0.020, 0.048, 0.016, { r: 0.004 }), 0, 0.006, -0.052);
+  f.add('gunGrip', slab(0.026, 0.038, 0.115, { r: 0.012 }), 0, 0.002, 0.014);
+  for (let i = 0; i < 5; i++) {
+    f.add('gunGrip', rod(0.0022, 0.026, 0.0022, 8), 0, -0.016, -0.020 + i * 0.024, 0, Math.PI / 2, 0);
+  }
+  f.add('meleeSteel', slab(0.024, 0.030, 0.010, { r: 0.004 }), 0, 0.002, 0.076);
+  // Lanyard hole through the butt.
+  f.add('meleeSteel', ring(0.006, 0.0022, 10), 0, 0.002, 0.078, 0, Math.PI / 2, 0);
+  return -0.06 - L - 0.02;
+}
+
+function buildAxe(f) {
+  const len = 0.66;
+  f.gripAt = { x: 0, y: 0, z: 0.02, rake: 0 };
+  haft(f, { len, r: 0.016, wrap: 0.22 });
+
+  const headZ = -len + 0.10;
+  // The bit: a wedge that flares to the cutting edge, hung off one side of
+  // the haft the way a real axe head is.
+  f.add('meleeSteel', slab(0.020, 0.088, 0.050, { r: 0.006 }), 0, 0.010, headZ);
+  f.add('meleeSteel', slab(0.014, 0.130, 0.030, { r: 0.010 }), 0, 0.030, headZ - 0.028);
+  f.add('meleeAlu', slab(0.0055, 0.140, 0.012, { r: 0.004, bevel: 0.0008 }), 0, 0.034, headZ - 0.045);
+  // Poll and spike on the back.
+  f.add('meleeSteel', slab(0.022, 0.040, 0.034, { r: 0.005 }), 0, -0.030, headZ + 0.014);
+  f.add('meleeSteel', slab(0.012, 0.020, 0.062, { r: 0.004 }), 0, -0.042, headZ + 0.052);
+  // Collar where the head is wedged onto the haft.
+  f.add('meleeSteel', rod(0.021, 0.030, 0.019, 12), 0, 0, headZ + 0.030);
+  return headZ - 0.06;
+}
+
+function buildSledge(f) {
+  const len = 0.78;
+  f.gripAt = { x: 0, y: 0, z: 0.02, rake: 0 };
+  haft(f, { len, r: 0.019, mat: 'meleeWood', wrap: 0.26 });
+
+  const headZ = -len + 0.10;
+  // A single block of steel across the end of the shaft, with the faces
+  // chamfered. Nothing clever: the whole idea of the weapon is the mass.
+  f.add('meleeSteel', rod(0.041, 0.150, 0.041, 14), 0, 0, headZ, 0, Math.PI / 2, 0);
+  f.add('meleeAlu', rod(0.043, 0.014, 0.041, 14), -0.075, 0, headZ, 0, Math.PI / 2, 0);
+  f.add('meleeAlu', rod(0.041, 0.014, 0.043, 14), 0.068, 0, headZ, 0, Math.PI / 2, 0);
+  // Eye reinforcement where the shaft passes through.
+  f.add('meleeSteel', rod(0.026, 0.042, 0.024, 12), 0, 0, headZ + 0.020);
+  return headZ - 0.05;
+}
+
 const BUILDERS = {
   knife: buildKnife, pistol: buildPistol, revolver: buildRevolver, smg: buildSmg,
   rifle: buildRifle, shotgun: buildShotgun, sniper: buildSniper, lmg: buildLmg,
   flamer: buildFlamer, tesla: buildTesla, launcher: buildLauncher, railgun: buildRailgun,
+  machete: buildMachete, axe: buildAxe, sledge: buildSledge,
 };
 
 /**
@@ -916,6 +1003,14 @@ export function buildWeapon(spec, mats) {
   group.userData.rear = new THREE.Box3().setFromObject(group).max.z;
   group.userData.glow = glow;
   group.userData.grip = f.gripAt;
+  if (spec.kind === 'melee' && spec.id !== 'knife') {
+    // Carried like the scanned props: cocked, up and across, out of the sight
+    // line. A blade held down the view axis is a line and nothing else.
+    group.userData.melee = true;
+    group.rotation.set(...(spec.model.rest || [0.86, -0.62, 0.16]));
+    group.userData.rest = group.rotation.clone();
+    group.userData.tip = new THREE.Vector3(0, 0, muzzleZ);
+  }
   group.userData.spec = spec;
   return group;
 }

@@ -92,6 +92,9 @@ const FIT = {
   drill:    { oneHanded: true },
   sign:     { span: 0.300 },
   ukulele:  { span: 0.260 },
+  machete:  { span: 0.090 },
+  axe:      { span: 0.230 },
+  sledge:   { span: 0.260 },
 };
 
 /**

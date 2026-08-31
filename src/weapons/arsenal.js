@@ -309,6 +309,60 @@ export const WEAPONS = {
     boxWeight: 0, price: 0, pickup: 2,
     tip: 'Six swings and it is kindling. Take it anyway.',
   },
+
+  // ---------------------------------------------------- the serious ones
+  /*
+   * Not improvised. Somebody keeps these for a reason, and they are the
+   * difference between surviving a crowd and clearing one.
+   */
+
+  machete: {
+    id: 'machete', name: 'Machete', short: 'MACHETE',
+    kind: 'melee', slot: 0,
+    damage: 235, headMul: 2.4,
+    rpm: 96, range: 2.5, arc: 0.40,
+    reach: 2.5, arcDeg: 42, maxTargets: 2, durability: 60, heft: 0.4, sever: 2.6,
+    magSize: Infinity, reserve: Infinity, infinite: true,
+    stagger: 0.35, knockback: 1.6,
+    recoil: { pitch: 0.014, yaw: 0.012, kick: 0.12 }, shake: 0.07,
+    automatic: true,
+    sound: { type: 'swing' },
+    model: { type: 'machete' },
+    boxWeight: 0, price: 0, pickup: 2,
+    tip: 'Takes arms off at half a sledgehammer\u2019s damage. Aim across, not down.',
+  },
+
+  axe: {
+    id: 'axe', name: 'Fire Axe', short: 'AXE',
+    kind: 'melee', slot: 0,
+    damage: 330, headMul: 2.6,
+    rpm: 56, range: 2.4, arc: 0.48,
+    reach: 2.4, arcDeg: 48, maxTargets: 2, durability: 70, heft: 0.85, sever: 2.0,
+    magSize: Infinity, reserve: Infinity, infinite: true,
+    stagger: 0.85, knockback: 3.8,
+    recoil: { pitch: 0.026, yaw: 0.014, kick: 0.22 }, shake: 0.13,
+    automatic: true,
+    sound: { type: 'swing' },
+    model: { type: 'axe', rest: [0.94, -0.58, 0.20] },
+    boxWeight: 0, price: 0, pickup: 2,
+    tip: 'Slow, and it takes a head off in one. Commit to the swing.',
+  },
+
+  sledge: {
+    id: 'sledge', name: 'Sledgehammer', short: 'SLEDGE',
+    kind: 'melee', slot: 0,
+    damage: 430, headMul: 1.8,
+    rpm: 40, range: 2.5, arc: 0.58,
+    reach: 2.5, arcDeg: 58, maxTargets: 3, durability: 90, heft: 1.0, sever: 0.6,
+    magSize: Infinity, reserve: Infinity, infinite: true,
+    stagger: 1.0, knockback: 7.0,
+    recoil: { pitch: 0.034, yaw: 0.016, kick: 0.30 }, shake: 0.20,
+    automatic: true,
+    sound: { type: 'swing' },
+    model: { type: 'sledge', rest: [0.90, -0.50, 0.18] },
+    boxWeight: 0, price: 0, pickup: 1,
+    tip: 'Nothing survives it and nothing stays standing near it. Very slow.',
+  },
 };
 
 export const WEAPON_LIST = Object.values(WEAPONS);
