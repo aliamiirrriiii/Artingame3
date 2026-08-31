@@ -39,6 +39,9 @@ const browser = await chromium.launch({
     // never advanced far enough to spawn anything.
     '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows',
     '--disable-background-timer-throttling',
+    // And this one: a headless window can still be judged occluded by the
+    // compositor, which throttles it just as hard as backgrounding does.
+    '--disable-features=CalculateNativeWinOcclusion',
     '--disable-gpu-sandbox', '--no-sandbox', '--ignore-gpu-blocklist',
   ],
 });

@@ -51,6 +51,9 @@ export class Combat {
     // Damage multipliers granted by power-ups and perks.
     this.damageMul = 1;
     this.fireRateMul = 1;
+    // Set by the wave director's BUTCHER condition: improvised weapons pay
+    // more while it is running.
+    this.meleeBonus = 1;
     this.instaKill = false;
     this.infiniteAmmo = false;
     this.reloadMul = 1;
@@ -784,6 +787,7 @@ export class Combat {
     }
     this.stage.addShake((w.shake ?? 0.08) * (hits.length ? 1.8 : 1));
     this.player.addRecoil(w.recoil.pitch, w.recoil.yaw * sw.side);
+    points = Math.round(points * this.meleeBonus);
     if (points && this.onPoints) this.onPoints(points, kills ? 'kill' : 'damage');
     if (hits.length && this.onHitMarker) this.onHitMarker(crit, kills > 0);
     if (this.onSwingHit) this.onSwingHit(hits, w, kills);

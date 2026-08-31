@@ -64,6 +64,14 @@ export class ZombieManager {
     this.onPlayerHit = null;      // (damage, zombie) => void
     this.onKill = null;           // (zombie, byPlayer, { crit, part, popped }) => void
     this.onDismember = null;      // (zombie, boneName) => void
+
+    /*
+     * Per-wave multipliers set by the director's modifiers. Applied at spawn
+     * for health and speed, and at the point of use for everything else, so a
+     * wave already on the field is not retroactively rewritten when the next
+     * one is drawn.
+     */
+    this.mods = { health: 1, speed: 1, damage: 1, points: 1, stagger: 1, sever: 1 };
     this.onSpit = null;           // (origin, dir, spec) => void
     this.onScream = null;         // (zombie) => void
 
@@ -348,7 +356,7 @@ export class ZombieManager {
     const growth = spec.boss
       ? 1 + Math.max(0, wave - 5) * 0.25
       : (w <= 9 ? 1 + w * 0.22 : 1 + 9 * 0.22 + (w - 9) * 0.30);
-    z.maxHealth = Math.round(spec.health * growth * (spec.healthScale ?? 1));
+    z.maxHealth = Math.max(1, Math.round(spec.health * growth * (spec.healthScale ?? 1) * this.mods.health));
     z.health = z.maxHealth;
     z.damageTaken = 0;
 
@@ -360,7 +368,7 @@ export class ZombieManager {
     z.scale = z.sizeVar * (spec.heightM / 1.8);
     z.height = spec.heightM * z.sizeVar;
     z.radius = BODY_RADIUS * (spec.heightM / 1.8) * z.sizeVar * (spec.boss ? 1.45 : 1);
-    z.baseSpeed = rand(spec.speed[0], spec.speed[1]) * (1 + Math.min(wave, 20) * 0.008);
+    z.baseSpeed = rand(spec.speed[0], spec.speed[1]) * (1 + Math.min(wave, 20) * 0.008) * this.mods.speed;
     z.speed = z.baseSpeed;
 
     z.pos.set(pos.x, 0, pos.z);
@@ -477,11 +485,11 @@ export class ZombieManager {
     if (limb && byPlayer && z.spec.gore > 0.3) {
       const taken = (z.limbDamage.get(limb) || 0) + amount;
       z.limbDamage.set(limb, taken);
-      if (taken > z.maxHealth * 0.30 + 12 && part === 'arm') this._sever(z, limb, dir, 1);
+      if (taken * this.mods.sever > z.maxHealth * 0.30 + 12 && part === 'arm') this._sever(z, limb, dir, 1);
     }
 
     // Stagger, resisted by mass. Brutes and bosses barely flinch.
-    const st = stagger * (1 - z.spec.staggerResist);
+    const st = stagger * (1 - z.spec.staggerResist) * this.mods.stagger;
     if (st > 0.01 && z.state !== 'attack') {
       z.staggerT = Math.max(z.staggerT, st);
       z.state = 'stagger';
@@ -495,9 +503,10 @@ export class ZombieManager {
 
     if (z.health <= 0) {
       this._kill(z, dir, crit, byPlayer, part, amount, hitPoint);
-      return { killed: true, crit, part, points: Math.round(z.spec.points * (crit ? 1.5 : 1)) };
+      return { killed: true, crit, part,
+        points: Math.round(z.spec.points * (crit ? 1.5 : 1) * this.mods.points) };
     }
-    return { killed: false, crit, part, points: Math.round(amount * 0.1) };
+    return { killed: false, crit, part, points: Math.round(amount * 0.1 * this.mods.points) };
   }
 
   /** Which limb bone a hit at `hitPoint` belongs to, by nearest capsule. */
@@ -586,12 +595,12 @@ export class ZombieManager {
     // carrying more than a third of the body's health pops.
     let popped = false;
     if (byPlayer && z.spec.gore > 0.3 && !z.spec.boss) {
-      if (part === 'head' && amount > z.maxHealth * 0.34) {
+      if (part === 'head' && amount * this.mods.sever > z.maxHealth * 0.34) {
         this._sever(z, 'Head', dir, 1.6);
         popped = true;
       } else if (hitPoint && (part === 'arm' || part === 'leg')) {
         const limb = this._limbBone(z, hitPoint);
-        if (limb && amount > z.maxHealth * 0.30) this._sever(z, limb, dir, 1.2);
+        if (limb && amount * this.mods.sever > z.maxHealth * 0.30) this._sever(z, limb, dir, 1.2);
       }
     }
 
@@ -937,7 +946,7 @@ export class ZombieManager {
       z.didHit = true;
       const reach = z.spec.attackRange * z.scale + 0.45;
       if (dist <= reach && !player.dead) {
-        if (this.onPlayerHit) this.onPlayerHit(z.spec.damage, z);
+        if (this.onPlayerHit) this.onPlayerHit(z.spec.damage * this.mods.damage, z);
       }
       audio.flesh(z.pos, false);
     }

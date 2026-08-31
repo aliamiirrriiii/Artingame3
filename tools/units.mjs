@@ -15,6 +15,9 @@ import { ARCHETYPES } from '../src/entities/zombieTypes.js';
 import {
   HITBOX_DEFS, intersectCapsule, sphereOverlapsRay,
 } from '../src/entities/hitboxes.js';
+import {
+  MODIFIERS, countFor, drawModifiers, foldModifiers,
+} from '../src/game/modifiers.js';
 
 let passed = 0, failed = 0;
 const test = (name, fn) => {
@@ -215,6 +218,90 @@ test('the hitbox table covers the body and names real Mixamo bones', () => {
   // same arm off twice and one would never be reachable.
   const limbs = HITBOX_DEFS.filter((h) => h.limb).map((h) => h.limb);
   assert.equal(new Set(limbs).size, limbs.length, 'duplicate sever bone');
+});
+
+console.log('\nwave conditions');
+
+test('the table is well formed', () => {
+  const ids = new Set();
+  for (const m of MODIFIERS) {
+    assert.ok(m.id && !ids.has(m.id), `duplicate or missing id: ${m.id}`);
+    ids.add(m.id);
+    assert.ok(m.name && m.blurb, `${m.id} has nothing to show the player`);
+    assert.ok(m.minWave >= 1 && m.weight > 0, `${m.id} cannot be drawn`);
+    assert.ok(m.zombie || m.wave || m.mood, `${m.id} does nothing`);
+  }
+});
+
+test('no conditions before wave 3, and never more than three', () => {
+  for (let w = 1; w <= 60; w++) {
+    const n = countFor(w, false);
+    assert.ok(n >= 0 && n <= 3, `wave ${w} wants ${n}`);
+    if (w < 3) assert.equal(n, 0, `wave ${w} should be plain`);
+  }
+  // A boss is a condition in itself.
+  assert.ok(countFor(20, true) < countFor(20, false));
+});
+
+test('a draw never repeats what the last waves had', () => {
+  const rng = new RNG(99);
+  let recent = [];
+  for (let w = 3; w <= 40; w++) {
+    const got = drawModifiers(w, () => rng.next(), recent, false);
+    for (const m of got) assert.ok(!recent.includes(m.id), `wave ${w} repeated ${m.id}`);
+    const ids = got.map((m) => m.id);
+    assert.equal(new Set(ids).size, ids.length, `wave ${w} drew a duplicate`);
+    recent = [...ids, ...recent].slice(0, 4);
+  }
+});
+
+test('a draw only offers what the wave has unlocked', () => {
+  const rng = new RNG(7);
+  for (let w = 3; w <= 40; w++) {
+    for (const m of drawModifiers(w, () => rng.next(), [], false)) {
+      assert.ok(w >= m.minWave, `${m.id} turned up on wave ${w}, needs ${m.minWave}`);
+    }
+  }
+});
+
+test('two conditions never fight over the same lever', () => {
+  const rng = new RNG(4242);
+  for (let w = 7; w <= 60; w++) {
+    const got = drawModifiers(w, () => rng.next(), [], false);
+    assert.ok(got.filter((m) => m.mood).length <= 1, `wave ${w} has two skies`);
+    assert.ok(got.filter((m) => m.wave?.budget).length <= 1, `wave ${w} scales the budget twice`);
+    assert.ok(got.filter((m) => m.wave?.interval).length <= 1, `wave ${w} scales the pace twice`);
+  }
+});
+
+test('folding is neutral with nothing to fold', () => {
+  const f = foldModifiers([]);
+  for (const v of Object.values(f.zombie)) assert.equal(v, 1);
+  for (const v of Object.values(f.wave)) assert.equal(v, 1);
+  assert.equal(f.mood, null);
+});
+
+test('folding stays inside sane bounds however it stacks', () => {
+  // Every combination of three, including ones the draw would refuse.
+  for (let i = 0; i < MODIFIERS.length; i++) {
+    for (let j = 0; j < MODIFIERS.length; j++) {
+      for (let k = 0; k < MODIFIERS.length; k++) {
+        const f = foldModifiers([MODIFIERS[i], MODIFIERS[j], MODIFIERS[k]]);
+        assert.ok(f.zombie.health >= 0.25 && f.zombie.health <= 3.2, 'health out of range');
+        assert.ok(f.zombie.speed >= 0.7 && f.zombie.speed <= 1.6, 'speed out of range');
+        assert.ok(f.zombie.damage <= 2.0, 'damage out of range');
+        assert.ok(f.wave.budget <= 2.4 && f.wave.budget >= 0.5, 'budget out of range');
+        assert.ok(f.wave.interval >= 0.4, 'interval out of range');
+      }
+    }
+  }
+});
+
+test('a swarm really is more of them, and a hardened wave really is fewer', () => {
+  const swarm = foldModifiers([MODIFIERS.find((m) => m.id === 'swarm')]);
+  const elite = foldModifiers([MODIFIERS.find((m) => m.id === 'elite')]);
+  assert.ok(swarm.wave.budget > 1.2 && swarm.zombie.health < 1);
+  assert.ok(elite.wave.budget < 0.8 && elite.zombie.health > 1.5);
 });
 
 console.log('\nweapons');

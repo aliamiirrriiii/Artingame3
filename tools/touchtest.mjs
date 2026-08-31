@@ -390,6 +390,45 @@ try {
   console.log(`       (frame time ${beforeKill.frameMs} ms before the kill, `
     + `${afterKill.frameMs} ms after)`);
 
+  /*
+   * Wave conditions. Drawn procedurally, so the only way to know they reach
+   * the game is to run a late wave and look at what actually changed: the
+   * horde's multipliers, the sky, and the panel that tells the player.
+   */
+  console.log('\nwave conditions');
+  const cond = await page.evaluate(() => {
+    const g = window.__game;
+    const seen = [];
+    for (let w = 0; w < 18; w++) {
+      g.director.wave = w;
+      g.director.stateT = 999;
+      g.director.breather = 0;
+      g.director._updatePreparing(0);
+      seen.push({
+        wave: g.director.wave,
+        ids: g.director.modifiers.map((m) => m.id),
+        shown: document.getElementById('conditions').childElementCount,
+        health: +g.zombies.mods.health.toFixed(2),
+        melee: +g.combat.meleeBonus.toFixed(2),
+      });
+    }
+    return {
+      seen,
+      late: seen[seen.length - 1],
+      everDrew: seen.some((s) => s.ids.length > 0),
+      panelMatched: seen.every((s) => s.shown === s.ids.length),
+      healthChanged: seen.some((s) => s.health !== 1),
+      butcherPaid: seen.some((s) => s.melee > 1) || !seen.some((s) => s.ids.includes('butcher')),
+      earlyPlain: seen.filter((s) => s.wave > 0 && s.wave < 3).every((s) => s.ids.length === 0),
+    };
+  });
+  check('early waves are plain', cond.earlyPlain === true);
+  check('later waves draw conditions', cond.everDrew === true,
+    `late wave ${cond.late.wave}: ${cond.late.ids.join(', ') || 'none'}`);
+  check('the panel says what they are', cond.panelMatched === true);
+  check('they reach the horde', cond.healthChanged === true);
+  check('BUTCHER pays out on melee', cond.butcherPaid === true);
+
   console.log('\npause');
   const pause = await rect('[data-touch="pause"]');
   await page.touchscreen.tap(pause.x + pause.width / 2, pause.y + pause.height / 2);

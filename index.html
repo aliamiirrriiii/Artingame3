@@ -440,6 +440,23 @@ body.touch #ui::after { height: 104px; }
   transition: opacity .18s;
 }
 
+/* ------------------------------------------------- this wave's conditions */
+/* What is different about this wave, said plainly and left on screen. A
+   modifier the player cannot name is just the game feeling inconsistent. */
+#conditions { display: flex; flex-direction: column; gap: 5px; margin-top: 10px; }
+.cond {
+  font-family: var(--disp); font-size: 12.5px; font-weight: 600;
+  letter-spacing: .22em; text-transform: uppercase;
+  color: var(--alert); text-shadow: var(--lift);
+  border-left: 2px solid var(--alert); padding-left: 7px;
+  animation: condIn .5s ease-out both;
+}
+.cond span {
+  display: block; font-size: 10.5px; font-weight: 400; letter-spacing: .06em;
+  color: var(--steel); text-transform: none; margin-top: 1px;
+}
+@keyframes condIn { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; } }
+
 /* ------------------------------------------------------------------ gore */
 /* Blood thrown onto the lens by a kill close enough to reach you. Irregular
    blobs rather than a red wash: a wash reads as damage, and the player has to
@@ -850,6 +867,7 @@ body.touch #lowfps { top: 34px; }
     <div id="wave-num">1</div>
     <div class="label" id="wave-sub">12 remaining</div>
     <div id="wave-bar"><div id="wave-fill"></div></div>
+    <div id="conditions"></div>
   </div>
 
   <div class="hud-corner" id="hud-tr">

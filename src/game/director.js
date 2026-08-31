@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { ARCHETYPES } from '../entities/zombieTypes.js';
 import { clamp, lerp, rand, randInt, RNG, TAU } from '../core/util.js';
 import { audio } from '../core/audio.js';
+import { drawModifiers, foldModifiers } from './modifiers.js';
 
 /**
  * The wave director.
@@ -31,6 +32,11 @@ export class Director {
     this.rng = new RNG(seed);
 
     this.wave = 0;
+    // This wave's conditions, and the ids of the last two waves' worth so the
+    // draw cannot serve the same one three times running.
+    this.modifiers = [];
+    this.mods = foldModifiers([]);
+    this.recentMods = [];
     this.state = WAVE_STATE.PREPARING;
     this.stateT = 0;
     this.breather = 8.0;
@@ -57,6 +63,9 @@ export class Director {
 
   start() {
     this.wave = 0;
+    this.modifiers = [];
+    this.mods = foldModifiers([]);
+    this.recentMods = [];
     this.state = WAVE_STATE.PREPARING;
     this.stateT = 0;
     this.breather = 4.0;
@@ -73,13 +82,15 @@ export class Director {
 
   /** Total spawn budget for a wave. Grows fast early, then steadies. */
   budgetFor(wave) {
-    return Math.round(4 + wave * 2.6 + Math.pow(wave, 1.62) * 0.55);
+    const base = 4 + wave * 2.6 + Math.pow(wave, 1.62) * 0.55;
+    return Math.round(base * (this.mods?.wave.budget ?? 1));
   }
 
   /** How many may be alive at once — climbs to the preset cap by wave 12. */
   aliveCapFor(wave) {
     const cap = this.zm.maxAlive;
-    return Math.round(clamp(6 + wave * 2.4, 6, cap));
+    const want = (6 + wave * 2.4) * (this.mods?.wave.cap ?? 1);
+    return Math.round(clamp(want, 6, cap));
   }
 
   isBossWave(wave) { return wave > 0 && wave % 5 === 0; }
@@ -153,6 +164,16 @@ export class Director {
   _updatePreparing(dt) {
     if (this.stateT < this.breather) return;
     this.wave++;
+
+    // Draw this wave's conditions before composing it: they change how many
+    // arrive, how tough they are and how fast they come.
+    const boss = this.isBossWave(this.wave);
+    this.modifiers = drawModifiers(this.wave, () => this.rng.next(), this.recentMods, boss);
+    this.mods = foldModifiers(this.modifiers);
+    this.recentMods = [...this.modifiers.map((m) => m.id), ...this.recentMods].slice(0, 4);
+    this.zm.mods = this.mods.zombie;
+    if (this.onModifiers) this.onModifiers(this.modifiers, this.mods);
+
     this.queue = this.composeWave(this.wave);
     this.spawnedThisWave = 0;
     this.killedThisWave = 0;
@@ -161,7 +182,7 @@ export class Director {
     this.stateT = 0;
 
     // Later waves arrive faster.
-    this.spawnInterval = clamp(1.5 - this.wave * 0.055, 0.28, 1.5);
+    this.spawnInterval = clamp((1.5 - this.wave * 0.055) * this.mods.wave.interval, 0.2, 1.5);
     this.spawnTimer = 0.4;
 
     audio.waveHorn(this.wave);
@@ -175,10 +196,20 @@ export class Director {
 
     // Boss waves recolour the whole scene: the light goes coppery and the
     // haze thickens, as if something upwind is burning.
+    // A modifier that takes over the sky outranks the default weather, but not
+    // a boss: whatever else is going on, a boss wave has to look like one.
+    const mood = this.mods.mood;
     if (this.isBossWave(this.wave)) {
       this.stage.setMood({
         fog: 0x9c7a6c, fogDensity: this.stage.preset.fogDensity * 1.35,
         sunColor: 0xffb488, sunIntensity: 1.5, exposure: 0.68,
+      });
+    } else if (mood) {
+      this.stage.setMood({
+        fog: mood.fog,
+        fogDensity: this.stage.preset.fogDensity * mood.fogDensity,
+        sunColor: mood.sunColor, sunIntensity: mood.sunIntensity,
+        exposure: mood.exposure,
       });
     } else {
       this.stage.setMood({

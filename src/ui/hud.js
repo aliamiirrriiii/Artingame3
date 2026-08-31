@@ -57,6 +57,7 @@ export class HUD {
       magPips: $('mag-pips'),
       killfeed: $('killfeed'),
       gore: $('gore'),
+      conditions: $('conditions'),
     };
 
     this.cache = {};
@@ -284,6 +285,35 @@ export class HUD {
     if (this.cache.pipsFilled === filled) return;
     this.cache.pipsFilled = filled;
     for (let i = 0; i < count; i++) this._pips[i].classList.toggle('spent', i >= filled);
+  }
+
+  // ---------------------------------------------------------- wave conditions
+
+  /**
+   * What is different about this wave.
+   *
+   * Named and left on screen for the whole wave, not flashed once: a rule the
+   * player cannot name is indistinguishable from the game being inconsistent,
+   * and half of these are only visible in how the wave behaves.
+   */
+  setConditions(list) {
+    const el = this.el.conditions;
+    if (!el) return;
+    const key = list.map((c) => c.name).join('|');
+    if (this.cache.conditions === key) return;
+    this.cache.conditions = key;
+    el.textContent = '';
+    for (const c of list) {
+      const d = document.createElement('div');
+      d.className = 'cond';
+      d.textContent = c.name;
+      if (c.blurb) {
+        const b = document.createElement('span');
+        b.textContent = c.blurb;
+        d.appendChild(b);
+      }
+      el.appendChild(d);
+    }
   }
 
   // -------------------------------------------------------------- kill feed

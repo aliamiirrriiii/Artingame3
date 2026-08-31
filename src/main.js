@@ -405,6 +405,10 @@ class Game {
       this.hud.announce(text, sub, tone === 'boss' ? 'boss' : tone === 'clear' ? 'good' : '');
     };
     this.director.onPowerup = (kind, def) => this._grantPowerup(kind, def);
+    this.director.onModifiers = (mods, folded) => {
+      this.combat.meleeBonus = folded.wave.meleePoints;
+      this.hud.setConditions(mods.map((m) => ({ name: m.name, blurb: m.blurb })));
+    };
 
     this.economy.onNotice = (t, tone) => this.hud.notice(t, tone);
     this.economy.onPickup = (s) => this.pickups.take(s);
@@ -1123,6 +1127,9 @@ class Game {
       shownScreens: [...document.querySelectorAll('.screen.show')].map((e) => e.id),
       runTime: Number(this.runTime.toFixed(1)),
       hitStop: Number((this.hitStop ?? 0).toFixed(3)),
+      modifiers: this.director ? this.director.modifiers.map((m) => m.id) : [],
+      conditionsShown: document.getElementById('conditions')?.childElementCount ?? -1,
+      pickupsLeft: this.pickups ? this.pickups.items.filter((i) => !i.taken).length : -1,
       goreSplats: document.getElementById('gore')?.childElementCount ?? -1,
       done: true,
     };
