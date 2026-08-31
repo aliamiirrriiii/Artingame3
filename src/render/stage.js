@@ -22,6 +22,21 @@ import { clamp, damp } from '../core/util.js';
 /** Daylight carries far less haze than the night build wanted. */
 const DAY_FOG = 0.30;
 
+/**
+ * Where the sun sits relative to whatever it is lighting.
+ *
+ * 42 west, 30 north, 44 up: an elevation of about forty degrees.
+ *
+ * Lower than this looks better in a still and plays worse in motion. The
+ * arena is a courtyard ringed by a nine-metre wall with seventeen-metre
+ * buildings inside it, so at the twenty-two degrees a photographer would pick,
+ * essentially the whole playable street falls into shadow and the horde
+ * crossing it becomes silhouettes on black. Forty keeps the long raking
+ * shadows off the kerbs, sills and lamp posts — which is what the angle is
+ * for — while leaving the ground lit enough to fight on.
+ */
+const SUN_OFFSET = [-42, 44, 30];
+
 export class Stage {
   constructor(canvas, preset) {
     this.canvas = canvas;
@@ -37,7 +52,7 @@ export class Stage {
     });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 0.75;
+    this.renderer.toneMappingExposure = 0.82;
     this.renderer.shadowMap.enabled = preset.shadows;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.shadowMap.autoUpdate = true;
@@ -61,7 +76,7 @@ export class Stage {
     this._flashTimer = 0;
     // Matches the constructor's starting exposure: this is damped toward every
     // frame, so a different value up there is overwritten within a second.
-    this.exposureTarget = 0.75;
+    this.exposureTarget = 0.82;
   }
 
   // ------------------------------------------------------------------ setup
@@ -69,12 +84,21 @@ export class Stage {
   _buildLights() {
     const p = this.preset;
 
-    // Sun key light. Rotated well off-axis from the camera so the arena reads
-    // with depth rather than flat frontal light, and kept at a mid-afternoon
-    // elevation: a noon sun puts every shadow directly under its object and
-    // flattens the whole street.
-    this.sun = new THREE.DirectionalLight(0xfff8ee, 2.05);
-    this.sun.position.set(-42, 58, 30);
+    /*
+     * Sun key light, late afternoon.
+     *
+     * Rotated well off-axis from the camera so the arena reads with depth
+     * rather than flat frontal light, and — the part that matters most —
+     * *low*. At the old elevation of forty-eight degrees every shadow was a
+     * short puddle under the thing that cast it, which is the light a
+     * photographer would go home rather than shoot in. At thirty the shadows
+     * run the length of the street, every kerb and sill has a hard edge under
+     * it, and the facades split into lit and unlit faces instead of reading
+     * as one grey mass. It also warms up: low sun is filtered through much
+     * more air, so the key goes amber and the fill it leaves behind goes blue.
+     */
+    this.sun = new THREE.DirectionalLight(0xffe4be, 2.5);
+    this.sun.position.set(...SUN_OFFSET);
     this.sun.castShadow = p.shadows;
     const s = this.sun.shadow;
     s.mapSize.set(p.shadowMapSize, p.shadowMapSize);
@@ -90,7 +114,11 @@ export class Stage {
     // Sky/ground bounce. Under a real sky this is doing most of the work in
     // shadow, so it is much stronger than the night version was: a daylight
     // shadow is blue-filled, not black.
-    this.hemi = new THREE.HemisphereLight(0x9fc0e8, 0x6b6154, 0.95);
+    // Sky fill. Under a real sky this is doing most of the work in shadow, and
+    // with the key this low it is doing more still: a daylight shadow is
+    // blue-filled, not black, and the darker half of every facade is lit
+    // entirely by this.
+    this.hemi = new THREE.HemisphereLight(0x8ab6f0, 0x6a5b46, 1.25);
     this.scene.add(this.hemi);
 
     // Flashlight. In daylight it earns its keep only inside the blocks and
@@ -310,7 +338,7 @@ export class Stage {
       0,
       playerPos.z + forward.z * this.preset.shadowDistance * 0.35,
     );
-    this.sun.position.set(t.x - 42, 58, t.z + 30);
+    this.sun.position.set(t.x + SUN_OFFSET[0], SUN_OFFSET[1], t.z + SUN_OFFSET[2]);
     this.sun.target.updateMatrixWorld();
   }
 

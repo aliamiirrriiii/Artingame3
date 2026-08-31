@@ -21,6 +21,7 @@ const TILE_METERS = {
   asphalt: 6, wetAsphalt: 11, concrete: 3, dirt: 5, tile: 2,
   brick: 3.2, plaster: 4, wood: 2.2, plank: 2.2, rust: 2.5,
   steel: 2, paintedMetal: 3, gunmetal: 1, ember: 1.5, water: 4,
+  stone: 2.4, canvas: 1.6, roadPaint: 3,
 };
 
 export const ARENA_HALF = 50;
@@ -158,6 +159,7 @@ export class Level {
     this._buildBlocks();
     this._buildPlaza();
     this._buildStreetProps();
+    this._buildClutter();
     this._buildSpawnPoints();
     this._buildStations();
     this._finalize();
@@ -202,8 +204,115 @@ export class Level {
     for (const [px, pz, pr] of [[-14, 22, 4.2], [19, -12, 3.4], [0, 38, 5.2], [-30, -26, 3.0]]) {
       this.puddle('wetAsphalt', px, pz, pr, { y: 0.015 });
     }
+
+    this._buildStreets();
   }
 
+  /**
+   * What makes a road a road.
+   *
+   * A sidewalk that is only a raised quad has no edge: it floats twelve
+   * centimetres above the asphalt with a hairline where the two meet, and the
+   * eye reads it as a lighter patch of the same surface. A kerb is the single
+   * cheapest piece of geometry in a city scene and does more for it than any
+   * texture — it gives every street a hard line running the length of it, and
+   * a shadow under that line all afternoon.
+   */
+  _buildStreets() {
+    const detail = this.preset.worldDetail ?? 2;
+    const r = this.rng;
+
+    // Kerbs around each sidewalk block, with the gutter channel outside them.
+    for (const [sx, sz] of QUADRANTS) {
+      const cx = sx * 34, cz = sz * 34, half = 15;
+      for (const [nx, nz] of FACES) {
+        const along = 30 + 0.7;
+        const px = cx + nx * half, pz = cz + nz * half;
+        const bw = nx !== 0 ? 0.35 : along;
+        const bd = nx !== 0 ? along : 0.35;
+        // Kerbstone: the face of it, standing up out of the road.
+        this.box('stone', px, 0, pz, bw, 0.155, bd, { collide: false });
+        // Gutter: a strip of darker, dirtier surface right against the kerb,
+        // which is where every city street is filthiest.
+        const gw = nx !== 0 ? 0.55 : along;
+        const gd = nx !== 0 ? along : 0.55;
+        this.ground('wetAsphalt', px + nx * 0.45, pz + nz * 0.45, gw, gd, { y: 0.006 });
+      }
+
+      if (detail >= 1) {
+        // Expansion joints across the flags, both ways.
+        for (let i = -5; i <= 5; i++) {
+          this.box('asphalt', cx + i * 2.6, 0.118, cz, 0.06, 0.02, 30, { collide: false });
+          this.box('asphalt', cx, 0.118, cz + i * 2.6, 30, 0.02, 0.06, { collide: false });
+        }
+      }
+    }
+
+    // Centre lines down both street spokes, broken where the plaza starts.
+    for (const axis of [0, 1]) {
+      for (let t = -46; t <= 46; t += 3.4) {
+        if (Math.abs(t) < 14) continue;
+        const px = axis === 0 ? 0 : t;
+        const pz = axis === 0 ? t : 0;
+        const bw = axis === 0 ? 0.16 : 1.9;
+        const bd = axis === 0 ? 1.9 : 0.16;
+        this.box('roadPaint', px, 0.004, pz, bw, 0.012, bd, { collide: false });
+      }
+    }
+
+    // Crossings on the four approaches to the plaza.
+    for (const [ax, az] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+      const base = 16.5;
+      for (let i = -3; i <= 3; i++) {
+        const off = i * 1.15;
+        const px = ax !== 0 ? ax * base : off;
+        const pz = az !== 0 ? az * base : off;
+        const bw = ax !== 0 ? 3.6 : 0.55;
+        const bd = ax !== 0 ? 0.55 : 3.6;
+        this.box('roadPaint', px, 0.004, pz, bw, 0.012, bd, { collide: false });
+      }
+    }
+
+    if (detail < 1) return;
+
+    // Ironwork in the road: manholes on the crown, gully gratings at the kerb.
+    for (const [mx, mz] of [[0, 24], [0, -21], [26, 0], [-23, 0], [12, 12], [-11, -13]]) {
+      this.cylinder('rust', mx, 0.004, mz, 0.42, 0.42, 0.02, { seg: 14 });
+      this.cylinder('steel', mx, 0.006, mz, 0.34, 0.34, 0.02, { seg: 14 });
+    }
+    for (const [sx, sz] of QUADRANTS) {
+      for (let k = -1; k <= 1; k += 2) {
+        this.box('rust', sx * 34 + k * 9, 0.004, sz * (34 - 15.4), 0.75, 0.03, 0.35,
+          { collide: false });
+        this.box('rust', sx * (34 - 15.4), 0.004, sz * 34 + k * 9, 0.35, 0.03, 0.75,
+          { collide: false });
+      }
+    }
+
+    if (detail < 2) return;
+
+    // Tarmac patches: the road has been dug up and filled in a dozen times,
+    // and the seams are one of the things that reads as "real place" without
+    // anyone consciously noticing them.
+    for (let i = 0; i < 14; i++) {
+      const px = r.range(-44, 44), pz = r.range(-44, 44);
+      if (Math.hypot(px, pz) < 13) continue;
+      if (this._occupied(px, pz, 1.4)) continue;
+      const w = r.range(2.2, 6.5), d = r.range(1.6, 4.5);
+      this.ground('wetAsphalt', px, pz, w, d, { y: 0.003, rotY: r.range(0, TAU) });
+    }
+  }
+
+  /**
+   * The ring wall that seals the block.
+   *
+   * It is the single largest thing in most frames — nine metres tall and a
+   * hundred long on every side — so a plain slab of brick behind everything
+   * flattens the whole picture. It gets the same treatment as the buildings:
+   * a base course, piers, a capping band, blind window bays between the piers,
+   * and enough shadow-casting relief that the sun rakes across it in the
+   * afternoon instead of lighting it evenly like a backdrop.
+   */
   _buildPerimeter() {
     const H = ARENA_HALF;
     const wallH = 9;
@@ -213,13 +322,52 @@ export class Level {
     this.box('brick', -H, 0, 0, 4, wallH, H * 2 + 4, { tag: 'wall' });
     this.box('brick', H, 0, 0, 4, wallH, H * 2 + 4, { tag: 'wall' });
 
-    // Buttress piers, purely to break the flat run of wall.
-    for (let i = -4; i <= 4; i++) {
-      const t = i * 11;
-      this.box('concrete', t, 0, -H + 2.6, 1.6, 9.6, 1.2, { tag: 'wall' });
-      this.box('concrete', t, 0, H - 2.6, 1.6, 9.6, 1.2, { tag: 'wall' });
-      this.box('concrete', -H + 2.6, 0, t, 1.2, 9.6, 1.6, { tag: 'wall' });
-      this.box('concrete', H - 2.6, 0, t, 1.2, 9.6, 1.6, { tag: 'wall' });
+    const detail = this.preset.worldDetail ?? 2;
+    const r = this.rng;
+    const runs = [
+      { nx: 0, nz: 1, ox: 0, oz: -H + 2 },   // north wall, inward face
+      { nx: 0, nz: -1, ox: 0, oz: H - 2 },
+      { nx: 1, nz: 0, ox: -H + 2, oz: 0 },
+      { nx: -1, nz: 0, ox: H - 2, oz: 0 },
+    ];
+
+    for (const run of runs) {
+      const face = {
+        nx: run.nx, nz: run.nz, ox: run.ox, oz: run.oz,
+        tx: run.nx !== 0 ? 0 : 1, tz: run.nx !== 0 ? 1 : 0,
+        width: H * 2, toPlaza: true,
+      };
+
+      // Base course and capping, the full length of the run.
+      this._faceBox('stone', face, 0, 0, 0.20, H * 2, 0.75, 0.40);
+      this._faceBox('stone', face, 0, wallH - 0.75, 0.26, H * 2, 0.42, 0.52);
+      this._faceBox('concrete', face, 0, wallH - 0.33, 0.16, H * 2, 0.34, 0.32);
+
+      for (let i = -4; i <= 4; i++) {
+        const u = i * 11;
+        // Pier, standing proud of the wall its whole height.
+        this._faceBox('concrete', face, u, 0, 0.6, 1.7, wallH - 0.6, 1.2, { tag: 'wall', collide: true });
+        this._faceBox('stone', face, u, wallH - 1.15, 0.75, 2.1, 0.40, 1.5);
+
+        if (detail < 1 || i === 4) continue;
+
+        // Blind bays between the piers: a recessed panel with an arch head,
+        // which is what a warehouse wall of this period actually looks like
+        // and what gives the run its rhythm at distance.
+        const mid = u + 5.5;
+        this._faceBox('stone', face, mid, 1.1, 0.30, 5.6, 0.26, 0.60);
+        this._faceBox('stone', face, mid, 6.4, 0.30, 5.6, 0.34, 0.60);
+        this._faceBox('stone', face, mid - 2.6, 1.36, 0.28, 0.40, 5.05, 0.56);
+        this._faceBox('stone', face, mid + 2.6, 1.36, 0.28, 0.40, 5.05, 0.56);
+
+        if (detail >= 2 && r.next() < 0.45) {
+          // Some of them are real openings, boarded over.
+          for (let k = 0; k < 5; k++) {
+            this._faceBox('plank', face, mid, 2.2 + k * 0.75, 0.34,
+              4.6, 0.55, 0.10, { rotY: 0 });
+          }
+        }
+      }
     }
   }
 
@@ -240,69 +388,262 @@ export class Level {
     }
   }
 
+  /**
+   * One building.
+   *
+   * The shell is still a box — it has to be, because the collision world is
+   * boxes and a zombie has to be able to path around it. Everything that makes
+   * it read as a building is dressing hung on the outside of that box: a base
+   * course, a shopfront at street level, sills and lintels and jambs standing
+   * proud of every window, a string course at each floor line, a cornice under
+   * the parapet, and the pipework and plant that real buildings are covered in
+   * and game buildings almost never are.
+   *
+   * None of it collides. The player's silhouette against the wall is the box;
+   * the trim is 20 cm deep and would only ever catch them on a corner.
+   */
   _building(x, z, w, d, h) {
     const r = this.rng;
-    const matKey = r.next() < 0.55 ? 'brick' : 'plaster';
-    this.box(matKey, x, 0, z, w, h, d, { tag: 'wall' });
+    const detail = this.preset.worldDetail ?? 2;
+    const brick = r.next() < 0.55;
+    const wallMat = brick ? 'brick' : 'plaster';
 
-    // Parapet + roof slab: reads correctly from the ground and gives the
-    // silhouette an edge against the sky.
-    this.box('concrete', x, h, z, w + 0.5, 0.6, d + 0.5, { collide: false });
+    this.box(wallMat, x, 0, z, w, h, d, { tag: 'wall' });
 
-    // Ground-floor plinth.
-    this.box('concrete', x, 0, z, w + 0.3, 0.9, d + 0.3, { tag: 'wall' });
+    // Base course: a plinth the whole building stands on, so the wall does not
+    // simply meet the pavement at a line.
+    this.box('stone', x, 0, z, w + 0.34, 0.55, d + 0.34, { tag: 'wall' });
+    this.box('stone', x, 0.55, z, w + 0.22, 0.16, d + 0.22, { collide: false });
 
-    // Windows. In daylight every one of them is a dark reflective pane: what
-    // you see in the glass is the sky and the building opposite, which is what
-    // sells a street as somewhere with depth behind its facades.
-    const floors = Math.max(1, Math.floor((h - 2.5) / 3.2));
-    const darkBatch = this._batch('windowDark');
+    // Cornice and coping. Two bands rather than one: the wider one throws the
+    // shadow that separates the building from the sky, the narrow one on top
+    // is the stone cap that keeps the rain out of the brickwork.
+    this.box('stone', x, h - 0.55, z, w + 0.62, 0.42, d + 0.62, { collide: false });
+    this.box('stone', x, h - 0.13, z, w + 0.40, 0.30, d + 0.40, { collide: false });
+    this.box('concrete', x, h + 0.17, z, w + 0.10, 0.50, d + 0.10, { collide: false });
+    this.box('rust', x, h + 0.02, z, w - 0.6, 0.16, d - 0.6, { collide: false });
 
+    const shopH = 3.5;
+    const floorH = 3.2;
+    const floors = Math.max(1, Math.floor((h - shopH - 1.4) / floorH));
+
+    for (const [nx, nz] of FACES) {
+      const face = {
+        nx, nz,
+        // Face centre, and the tangent that runs along it.
+        ox: x + nx * (w / 2), oz: z + nz * (d / 2),
+        tx: nx !== 0 ? 0 : 1, tz: nx !== 0 ? 1 : 0,
+        width: nx !== 0 ? d : w,
+        // Which way the plaza is: the side a player actually walks past.
+        toPlaza: (nx !== 0 && Math.sign(nx) !== Math.sign(x))
+          || (nz !== 0 && Math.sign(nz) !== Math.sign(z)),
+      };
+      this._facade(face, h, shopH, floorH, floors, detail);
+    }
+
+    if (detail >= 1) this._rooftop(x, z, w, d, h);
+  }
+
+  /** A box positioned in a facade's own frame: `u` along it, `v` out of it. */
+  _faceBox(matKey, face, u, y, v, along, height, out, opts = {}) {
+    const px = face.ox + face.tx * u + face.nx * v;
+    const pz = face.oz + face.tz * u + face.nz * v;
+    const bw = face.nx !== 0 ? out : along;
+    const bd = face.nx !== 0 ? along : out;
+    return this.box(matKey, px, y, pz, bw, height, bd, { collide: false, ...opts });
+  }
+
+  _facade(face, h, shopH, floorH, floors, detail) {
+    const r = this.rng;
+    const fw = face.width;
+    const bays = Math.max(2, Math.round(fw / 3.3));
+    const bayW = fw / bays;
+    const half = fw / 2;
+
+    // ------------------------------------------------------------ shopfront
+    //
+    // The ground floor is where the player's eye actually is, so it gets the
+    // most: recessed glazing between stone pilasters, a stall riser under it,
+    // a fascia board over it, and an awning on some of them.
+    for (let b = 0; b < bays; b++) {
+      const u = -half + (b + 0.5) * bayW;
+      const openW = bayW - 0.7;
+
+      this._faceBox('plank', face, u, 0.55, 0.10, openW, 0.62, 0.16);
+      const shuttered = r.next() < 0.22;
+      if (shuttered) {
+        this._faceBox('rust', face, u, 1.17, 0.13, openW, 1.75, 0.10);
+      } else if (face.toPlaza && r.next() < 0.55) {
+        // The one place a real broken-window model is worth its draw call.
+        this.windowPlacements.push({
+          x: face.ox + face.tx * u + face.nx * 0.10,
+          z: face.oz + face.tz * u + face.nz * 0.10,
+          y: 1.30,
+          rotY: Math.atan2(face.nx, face.nz),
+        });
+      } else {
+        this._pane(face, u, 1.17, openW, 1.75, 2, 1);
+      }
+
+      if (detail >= 1 && !shuttered && r.next() < 0.35) {
+        // Awning: a flat canopy on two brackets. Flat rather than sloped
+        // because the batcher only carries a yaw, and at eye level from below
+        // the difference is a shadow nobody reads.
+        this._faceBox('canvas', face, u, 2.95, 0.55, openW + 0.35, 0.07, 1.05);
+        this._faceBox('steel', face, u - openW * 0.4, 2.98, 0.30, 0.05, 0.30, 0.55);
+        this._faceBox('steel', face, u + openW * 0.4, 2.98, 0.30, 0.05, 0.30, 0.55);
+      }
+    }
+
+    // Pilasters between the bays, and one at each end.
+    for (let b = 0; b <= bays; b++) {
+      const u = -half + b * bayW;
+      this._faceBox('stone', face, u, 0.55, 0.14, 0.42, shopH - 0.55, 0.24);
+    }
+    // Fascia over the whole shopfront, and the transom under it.
+    this._faceBox('plank', face, 0, shopH - 0.62, 0.16, fw, 0.62, 0.26);
+    this._faceBox('stone', face, 0, shopH, 0.20, fw + 0.30, 0.26, 0.32);
+
+    // ---------------------------------------------------------- upper floors
     for (let f = 0; f < floors; f++) {
-      const wy = 2.2 + f * 3.2;
-      if (wy + 1.2 > h) break;
-      for (const [nx, nz, ww] of [
-        [0, -1, w], [0, 1, w], [-1, 0, d], [1, 0, d],
-      ]) {
-        const count = Math.max(1, Math.floor(ww / 3.2));
-        for (let i = 0; i < count; i++) {
-          const t = (i + 0.5) / count - 0.5;
-          const px = x + nx * (w / 2 + 0.06) + (nx === 0 ? t * ww : 0);
-          const pz = z + nz * (d / 2 + 0.06) + (nz === 0 ? t * ww : 0);
-          // Ground floor, facing the plaza: use the real smashed-window model.
-          // Everything above stays a cheap quad — you never get close enough
-          // to tell, and there are hundreds of them.
-          const towardPlaza = (nx !== 0 && Math.sign(nx) !== Math.sign(x))
-            || (nz !== 0 && Math.sign(nz) !== Math.sign(z));
-          if (f === 0 && towardPlaza && r.next() < 0.65) {
-            this.windowPlacements.push({
-              x: px + nx * 0.06, y: wy - 0.78, z: pz + nz * 0.06,
-              rotY: Math.atan2(nx, nz),
-            });
-          } else {
-            const g = new THREE.PlaneGeometry(1.5, 1.9);
-            g.rotateY(Math.atan2(nx, nz));
-            g.translate(px, wy, pz);
-            darkBatch.push(g);
-          }
+      const fy = shopH + 0.26 + f * floorH;
+      if (fy + 2.1 > h - 0.9) break;
 
-          // Lit windows were the warm landmarks of the night version. In
-          // daylight nothing behind that glass could out-shine the sky, so
-          // they are simply windows now.
+      // String course: the horizontal that gives a facade its storeys.
+      this._faceBox('stone', face, 0, fy - 0.16, 0.08, fw, 0.16, 0.20);
+
+      for (let b = 0; b < bays; b++) {
+        const u = -half + (b + 0.5) * bayW;
+        const ww = Math.min(1.55, bayW - 1.1);
+        this._window(face, u, fy + 0.55, ww, 1.75, detail);
+
+        // Plant hanging off the wall, because every building of this vintage
+        // has had air conditioning bolted to it since.
+        if (detail >= 1 && f > 0 && r.next() < 0.10) {
+          this._faceBox('paintedMetal', face, u, fy + 0.30, 0.28, 0.72, 0.46, 0.42);
+          this._faceBox('steel', face, u, fy + 0.24, 0.26, 0.80, 0.07, 0.46);
         }
       }
     }
 
-    // Boarded-up doorway on the street-facing side.
-    const side = r.int(0, 3);
-    const [dnx, dnz] = [[0, -1], [0, 1], [-1, 0], [1, 0]][side];
-    const dx = x + dnx * (w / 2 + 0.12);
-    const dz = z + dnz * (d / 2 + 0.12);
-    for (let i = 0; i < 4; i++) {
-      this.box('plank',
-        dx + (dnz ? 0 : 0), 0.5 + i * 0.55, dz,
-        dnz ? 2.2 : 0.1, 0.34, dnz ? 0.1 : 2.2,
-        { collide: false, rotY: r.range(-0.05, 0.05) });
+    // ----------------------------------------------------------- ironmongery
+    if (detail >= 1) {
+      // Downpipe at one end of the face, with the hopper head at the top.
+      const side = r.next() < 0.5 ? -1 : 1;
+      const u = side * (half - 0.35);
+      this.cylinder('rust',
+        face.ox + face.tx * u + face.nx * 0.16,
+        0, face.oz + face.tz * u + face.nz * 0.16,
+        0.075, 0.075, h - 0.7, { seg: 6 });
+      this._faceBox('rust', face, u, h - 1.0, 0.16, 0.30, 0.30, 0.30);
+      // Brackets, so the pipe is fixed to something.
+      for (let y = 1.6; y < h - 1.2; y += 2.4) {
+        this._faceBox('rust', face, u, y, 0.09, 0.16, 0.07, 0.20);
+      }
+    }
+
+    if (detail >= 2 && face.toPlaza && floors >= 2 && r.next() < 0.45) {
+      this._fireEscape(face, shopH + 0.26, floorH, Math.min(floors, 4));
+    }
+  }
+
+  /** One window: pane, jambs, sill and lintel, all standing off the wall. */
+  _window(face, u, y, ww, wh, detail) {
+    this._pane(face, u, y, ww, wh, 2, 2);
+    // Jambs either side, deeper than the pane, so the opening reads as cut in.
+    this._faceBox('stone', face, u - ww / 2 - 0.09, y, 0.09, 0.18, wh, 0.20);
+    this._faceBox('stone', face, u + ww / 2 + 0.09, y, 0.09, 0.18, wh, 0.20);
+    // Sill: the deepest thing on the facade, and the one that throws the
+    // shadow that says "there is a hole here".
+    this._faceBox('stone', face, u, y - 0.13, 0.13, ww + 0.52, 0.14, 0.28);
+    // Lintel over the top.
+    this._faceBox('stone', face, u, y + wh, 0.11, ww + 0.44, 0.18, 0.24);
+    if (detail >= 2 && this.rng.next() < 0.18) {
+      // A blind left half down behind the glass.
+      this._faceBox('plank', face, u, y + wh * 0.55, 0.03,
+        ww - 0.06, wh * 0.45, 0.03);
+    }
+  }
+
+  /**
+   * Glazing, as a grid of small panes with the wall showing between them.
+   *
+   * Cheaper than a pane plus separate glazing bars — the gaps *are* the bars —
+   * and it means a window is never one flat rectangle of reflection, which is
+   * what made the old facades read as stickers.
+   */
+  _pane(face, u, y, ww, wh, cols, rows) {
+    const bar = 0.055;
+    const pw = (ww - bar * (cols - 1)) / cols;
+    const ph = (wh - bar * (rows - 1)) / rows;
+    for (let c = 0; c < cols; c++) {
+      for (let rr = 0; rr < rows; rr++) {
+        const pu = u - ww / 2 + pw / 2 + c * (pw + bar);
+        const py = y + ph / 2 + rr * (ph + bar);
+        const px = face.ox + face.tx * pu + face.nx * 0.03;
+        const pz = face.oz + face.tz * pu + face.nz * 0.03;
+        const g = new THREE.PlaneGeometry(pw, ph);
+        g.rotateY(Math.atan2(face.nx, face.nz));
+        g.translate(px, py, pz);
+        this._batch('windowDark').push(g);
+      }
+    }
+  }
+
+  /** Landings, railings and a ladder down the front of a building. */
+  _fireEscape(face, y0, floorH, flights) {
+    const w = Math.min(face.width * 0.45, 3.0);
+    for (let f = 0; f < flights; f++) {
+      const y = y0 + f * floorH + 0.6;
+      this._faceBox('steel', face, 0, y, 0.75, w, 0.06, 1.35);
+      // Railings: two rails and the posts between them.
+      this._faceBox('steel', face, 0, y + 1.0, 1.40, w, 0.05, 0.05);
+      this._faceBox('steel', face, 0, y + 0.5, 1.40, w, 0.04, 0.04);
+      for (let i = -1; i <= 1; i++) {
+        this._faceBox('steel', face, i * w * 0.45, y, 1.40, 0.05, 1.05, 0.05);
+      }
+      // The ladder up to the next landing.
+      if (f < flights - 1) {
+        for (const s of [-1, 1]) {
+          this._faceBox('steel', face, w * 0.3 + s * 0.22, y, 1.05, 0.045, floorH, 0.045);
+        }
+        for (let k = 1; k < 7; k++) {
+          this._faceBox('steel', face, w * 0.3, y + k * (floorH / 7), 1.05, 0.44, 0.035, 0.035);
+        }
+      }
+    }
+  }
+
+  /** What is actually on a city roof: the stair head, a tank, and vents. */
+  _rooftop(x, z, w, d, h) {
+    const r = this.rng;
+    const top = h + 0.42;
+    this.box('brick', x + r.range(-w * 0.2, w * 0.2), top, z + r.range(-d * 0.2, d * 0.2),
+      2.4, 2.3, 2.0, { collide: false });
+
+    if (r.next() < 0.55) {
+      // Water tank on legs.
+      const tx = x + r.range(-w * 0.25, w * 0.25);
+      const tz = z + r.range(-d * 0.25, d * 0.25);
+      for (const [ax, az] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+        this.cylinder('rust', tx + ax * 0.75, top, tz + az * 0.75, 0.09, 0.09, 1.5, { seg: 5 });
+      }
+      this.cylinder('wood', tx, top + 1.5, tz, 1.15, 1.05, 2.1, { seg: 12 });
+      this.cylinder('rust', tx, top + 3.5, tz, 1.22, 1.22, 0.14, { seg: 12 });
+    }
+
+    for (let i = 0; i < r.int(2, 4); i++) {
+      const vx = x + r.range(-w * 0.35, w * 0.35);
+      const vz = z + r.range(-d * 0.35, d * 0.35);
+      this.cylinder('steel', vx, top, vz, 0.22, 0.26, r.range(0.6, 1.4), { seg: 8 });
+      this.cylinder('rust', vx, top + 1.3, vz, 0.30, 0.30, 0.10, { seg: 8 });
+    }
+
+    // An aerial, for the silhouette.
+    if (r.next() < 0.5) {
+      const ax = x + r.range(-w * 0.3, w * 0.3);
+      const az = z + r.range(-d * 0.3, d * 0.3);
+      this.cylinder('steel', ax, top, az, 0.035, 0.05, r.range(2.5, 4.5), { seg: 4 });
     }
   }
 
@@ -583,6 +924,127 @@ export class Level {
    * Spawn points sit in the recessed alleys behind the corner blocks and along
    * the ring road, so the horde walks in rather than appearing in front of you.
    */
+  /**
+   * The layer that makes a place look lived in and then abandoned.
+   *
+   * None of this is gameplay. It is rubble against the kerbs, bins and
+   * pallets stacked where someone left them, silt fanning out of the gutters,
+   * and — the cheapest and most valuable piece of it — a band of dirt where
+   * every wall meets the ground. Nothing says "this building was dropped in
+   * here five minutes ago" like a clean line at its base, and nothing fixes
+   * it faster than half a metre of muck.
+   */
+  _buildClutter() {
+    const detail = this.preset.worldDetail ?? 2;
+    const r = this.rng;
+
+    // Grime at the foot of every wall: the buildings, then the ring wall.
+    for (const [sx, sz] of QUADRANTS) {
+      const ox = sx * 34, oz = sz * 34;
+      for (const [bx, bz, bw, bd] of [
+        [ox - sx * 8, oz - sz * 9, 14, 11],
+        [ox + sx * 8, oz - sz * 6, 11, 16],
+        [ox - sx * 4, oz + sz * 8, 18, 9],
+      ]) {
+        for (const [nx, nz] of FACES) {
+          const along = (nx !== 0 ? bd : bw) + 1.2;
+          this.ground('dirt',
+            bx + nx * (bw / 2 + 0.42), bz + nz * (bd / 2 + 0.42),
+            nx !== 0 ? 1.1 : along, nx !== 0 ? along : 1.1,
+            { y: 0.014 });
+        }
+      }
+    }
+    const H = ARENA_HALF;
+    for (const [nx, nz] of FACES) {
+      this.ground('dirt', nx * (H - 2.4), nz * (H - 2.4),
+        nx !== 0 ? 1.4 : H * 2, nx !== 0 ? H * 2 : 1.4, { y: 0.014 });
+    }
+
+    if (detail < 1) return;
+
+    // Silt fanning out of the gutters where the drains gave up.
+    for (let i = 0; i < 18; i++) {
+      const a = r.range(0, TAU), rad = r.range(16, 46);
+      const px = Math.cos(a) * rad, pz = Math.sin(a) * rad;
+      if (this._occupied(px, pz, 1.0)) continue;
+      this.puddle('dirt', px, pz, r.range(0.8, 2.4), { y: 0.010, wobble: 0.4 });
+    }
+
+    // Rubble: brick and broken slab against the kerbs and walls.
+    for (let i = 0; i < 46; i++) {
+      const a = r.range(0, TAU), rad = r.range(14, 46);
+      const px = Math.cos(a) * rad, pz = Math.sin(a) * rad;
+      if (this._occupied(px, pz, 1.2)) continue;
+      const n = r.int(3, 7);
+      for (let k = 0; k < n; k++) {
+        const jx = px + r.range(-0.9, 0.9), jz = pz + r.range(-0.9, 0.9);
+        const sz2 = r.range(0.12, 0.42);
+        this.box(r.next() < 0.5 ? 'brick' : 'concrete',
+          jx, 0, jz, sz2, r.range(0.06, 0.22), sz2 * r.range(0.6, 1.3),
+          { rotY: r.range(0, TAU), collide: false });
+      }
+    }
+
+    // Things people put down and never picked up.
+    for (let i = 0; i < 30; i++) {
+      const a = r.range(0, TAU), rad = r.range(15, 45);
+      const px = Math.cos(a) * rad, pz = Math.sin(a) * rad;
+      if (this._occupied(px, pz, 2.0)) continue;
+      const rot = r.range(0, TAU);
+      const pick = r.next();
+
+      if (pick < 0.22) {
+        // Wheelie bin, lid up or down.
+        this.box('paintedMetal', px, 0, pz, 0.66, 1.05, 0.72, { rotY: rot, tag: 'cover' });
+        this.box('paintedMetal', px, 1.05, pz, 0.70, 0.08, 0.76, { rotY: rot, collide: false });
+        this.cylinder('rust', px, 0, pz + 0.3, 0.09, 0.09, 0.18, { seg: 6 });
+      } else if (pick < 0.42) {
+        // Pallet stack.
+        const n = r.int(1, 4);
+        for (let k = 0; k < n; k++) {
+          this.box('plank', px, k * 0.15, pz, 1.2, 0.12, 1.0,
+            { rotY: rot + r.range(-0.12, 0.12), collide: k === 0 });
+        }
+      } else if (pick < 0.60) {
+        // Crates, stacked badly.
+        const n = r.int(1, 3);
+        for (let k = 0; k < n; k++) {
+          const c = r.range(0.55, 0.85);
+          this.box('wood', px + r.range(-0.2, 0.2), k * c, pz + r.range(-0.2, 0.2),
+            c, c, c, { rotY: rot + r.range(-0.4, 0.4), tag: 'cover' });
+        }
+      } else if (pick < 0.76) {
+        // Tyres.
+        for (let k = 0; k < r.int(1, 4); k++) {
+          this.cylinder('gunPolymer', px + r.range(-0.4, 0.4), k * 0.2,
+            pz + r.range(-0.4, 0.4), 0.36, 0.36, 0.2, { seg: 12 });
+        }
+      } else if (pick < 0.90) {
+        // A sandbag line — someone tried to hold this street.
+        const n = r.int(3, 6);
+        for (let k = 0; k < n; k++) {
+          const t = (k - (n - 1) / 2) * 0.52;
+          const bx = px + Math.cos(rot) * t, bz = pz + Math.sin(rot) * t;
+          this.box('dirt', bx, 0, bz, 0.52, 0.24, 0.34,
+            { rotY: rot + r.range(-0.1, 0.1), collide: false });
+          if (r.next() < 0.6) {
+            this.box('dirt', bx, 0.24, bz, 0.50, 0.22, 0.32,
+              { rotY: rot + r.range(-0.2, 0.2), collide: false });
+          }
+        }
+        this.collision.add(new Box(px, 0, pz, 1.4, 0.4, 0.5, rot, 'cover'));
+      } else {
+        // Drifts of paper against a kerb.
+        for (let k = 0; k < r.int(4, 9); k++) {
+          this.box('plank', px + r.range(-0.8, 0.8), 0.004, pz + r.range(-0.8, 0.8),
+            r.range(0.18, 0.34), 0.012, r.range(0.14, 0.26),
+            { rotY: r.range(0, TAU), collide: false });
+        }
+      }
+    }
+  }
+
   _buildSpawnPoints() {
     const candidates = [];
     for (const [sx, sz] of QUADRANTS) {
@@ -766,9 +1228,12 @@ export class Level {
     // One extra material that only exists for windows: a dark, near-smooth
     // pane that is almost entirely what it reflects. Under a sky this is what
     // gives a flat facade its depth.
+    // Glass. Rough enough that the sun spreads across a pane instead of
+    // clipping to a white rectangle on it, and reflecting the sky at a
+    // believable strength rather than two and a half times it.
     const darkMat = new THREE.MeshStandardMaterial({
-      color: 0x0b0e13, roughness: 0.09, metalness: 0.40,
-      envMapIntensity: 2.6, side: THREE.DoubleSide,
+      color: 0x0c1017, roughness: 0.14, metalness: 0.35,
+      envMapIntensity: 1.45, side: THREE.DoubleSide,
     });
 
     for (const [key, geos] of this.batches) {
@@ -916,6 +1381,9 @@ export class Level {
 }
 
 // ------------------------------------------------------------------ tables
+
+// Outward normals of a box's four vertical faces.
+const FACES = [[0, -1], [0, 1], [-1, 0], [1, 0]];
 
 const QUADRANTS = [[-1, -1], [1, -1], [-1, 1], [1, 1]];
 

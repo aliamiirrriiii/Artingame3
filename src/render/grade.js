@@ -24,13 +24,24 @@ export const GradeShader = {
     uFreeze:         { value: 0.0 },    // freeze power-up tint
     uFlash:          { value: 0.0 },    // explosion / nuke whiteout
 
-    // Daylight grade: a bleached, slightly warm print. The night version
-    // lifted the blacks into blue and pulled saturation down hard; under a sun
-    // that reads as a filter over the lens rather than as the light itself.
-    uLift:           { value: [0.010, 0.010, 0.012] },
-    uGain:           { value: [1.05, 1.01, 0.97] },
-    uSaturation:     { value: 0.88 },
-    uContrast:       { value: 1.12 },
+    /*
+     * Late-afternoon print.
+     *
+     * The split is the whole idea: the key is a low sun and therefore amber,
+     * so the highlights are pushed warm; the fill is the sky and therefore
+     * blue, so the shadows are lifted into blue rather than lifted neutral.
+     * Every frame then carries a warm/cool separation that no amount of
+     * texture detail can substitute for — it is most of why golden-hour
+     * footage looks expensive.
+     *
+     * Saturation comes back up too. The old figure was mixed for a bleached
+     * look that reads as a filter over the lens; at 0.96 the colour that is
+     * actually in the scene survives to the screen.
+     */
+    uLift:           { value: [0.004, 0.011, 0.026] },
+    uGain:           { value: [1.075, 1.005, 0.925] },
+    uSaturation:     { value: 0.96 },
+    uContrast:       { value: 1.10 },
   },
 
   vertexShader: /* glsl */`

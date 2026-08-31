@@ -214,13 +214,23 @@ export class MaterialLibrary {
 
     // Weathered street steel, not a mirror: under an open sky a low-roughness
     // metal reflects the whole hemisphere and reads as a chrome rod.
-    this.set('steel', this._std({
-      color: 0x767c84,
-      roughness: 0.82,
-      metalness: 0.55,
-      roughnessMap: rep(a.tex('roughDetail'), 1, 1),
-      envMapIntensity: 1.0,
-    }));
+    /*
+     * Galvanised steel: posts, railings, gratings, fire escapes.
+     *
+     * No roughness map. three multiplies `roughness` by the map's green
+     * channel, so wherever that texture went dark the material became a
+     * mirror — and because the UVs are world-scaled, a 50 mm fence post
+     * samples three per cent of the texture and takes one value across its
+     * whole length. The result was a chain-link fence made of chrome bars,
+     * each one clipping to white against the sky. The variation comes from
+     * the breakup instead, which is bounded and cannot reach zero.
+     */
+    this.set('steel', this.breakup(this._std({
+      color: 0x6e747c,
+      roughness: 0.66,
+      metalness: 0.50,
+      envMapIntensity: 0.85,
+    }), { scale: 3.5, albedo: 0.16, rough: 0.20, tint: 0xb9bcc2 }));
 
     this.set('rust', this.breakup(this._std({
       normalMap: rep(grungeN, 1, 1),
@@ -384,6 +394,45 @@ export class MaterialLibrary {
       normalScale: new THREE.Vector2(0.22, 0.22),
       envMapIntensity: 1.3,
     }), { scale: 5, albedo: 0.3, rough: 0.3 }));
+
+    // --------------------------------------------------------- architecture
+    //
+    // Trim wants to read as a different *material* from the wall behind it, not
+    // just a different colour: cast stone is smoother and lighter than brick,
+    // and that difference is most of what makes a sill look like a sill rather
+    // than a ridge someone extruded.
+
+    this.set('stone', this.breakup(this._std({
+      normalMap: rep(grungeN, 1, 1),
+      normalScale: new THREE.Vector2(0.22, 0.22),
+      color: 0x7b766c,
+      roughness: 0.74,
+      metalness: 0,
+      envMapIntensity: 0.45,
+    }), { scale: 9, albedo: 0.20, rough: 0.14, tint: 0xd8d4c8 }));
+
+    // Shop awnings and tarpaulins. Lit from one side only in the real world;
+    // here it is double-sided because you walk under them.
+    this.set('canvas', this.breakup(this._std({
+      normalMap: rep(grungeN, 1, 1),
+      normalScale: new THREE.Vector2(0.30, 0.30),
+      color: 0x6b3b32,
+      roughness: 0.95,
+      metalness: 0,
+      envMapIntensity: 0.25,
+      side: THREE.DoubleSide,
+    }), { scale: 4, albedo: 0.26, rough: 0.10 }));
+
+    // Road markings. Worn paint over the asphalt underneath, which is why the
+    // breakup is turned up: fresh white lines look painted on this morning.
+    this.set('roadPaint', this.breakup(this._std({
+      normalMap: rep(grungeN, 1, 1),
+      normalScale: new THREE.Vector2(0.30, 0.30),
+      color: 0x9a978c,
+      roughness: 0.92,
+      metalness: 0,
+      envMapIntensity: 0.2,
+    }), { scale: 6, albedo: 0.55, rough: 0.2, tint: 0x8e8d86 }));
 
     // ----------------------------------------------------------- transparent
 

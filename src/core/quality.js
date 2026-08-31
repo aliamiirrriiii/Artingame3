@@ -15,6 +15,11 @@ export const PRESETS = {
     anisotropy: 2, envMapSize: 128,
     maxZombies: 22, zombieShadowDistance: 14, animLodDistance: 16,
     particleBudget: 240, decalBudget: 48, drawDistance: 110, fogDensity: 0.036,
+    // How much static dressing the level builds: window trim and shopfronts,
+    // fire escapes and rooftop clutter, kerbside litter. It is all merged into
+    // the existing batches, so the cost is triangles and memory rather than
+    // draw calls — which is exactly the budget a low-end phone has least of.
+    worldDetail: 0,
     dynamicLights: 3,
   },
   medium: {
@@ -25,6 +30,7 @@ export const PRESETS = {
     anisotropy: 4, envMapSize: 256,
     maxZombies: 34, zombieShadowDistance: 20, animLodDistance: 24,
     particleBudget: 500, decalBudget: 96, drawDistance: 150, fogDensity: 0.030,
+    worldDetail: 1,
     dynamicLights: 6,
   },
   high: {
@@ -35,6 +41,7 @@ export const PRESETS = {
     anisotropy: 8, envMapSize: 256,
     maxZombies: 46, zombieShadowDistance: 28, animLodDistance: 32,
     particleBudget: 900, decalBudget: 160, drawDistance: 190, fogDensity: 0.026,
+    worldDetail: 2,
     dynamicLights: 9,
   },
   ultra: {
@@ -45,6 +52,7 @@ export const PRESETS = {
     anisotropy: 16, envMapSize: 512,
     maxZombies: 60, zombieShadowDistance: 38, animLodDistance: 44,
     particleBudget: 1400, decalBudget: 220, drawDistance: 240, fogDensity: 0.022,
+    worldDetail: 2,
     dynamicLights: 14,
   },
 };
@@ -71,6 +79,9 @@ export function mobilePreset(preset) {
     ssao: false,
     anisotropy: Math.min(preset.anisotropy, 4),
     envMapSize: Math.min(preset.envMapSize, 128),
+    // Dressing is static and batched, so a phone can afford one tier of it
+    // even where it cannot afford the pixels.
+    worldDetail: Math.min(preset.worldDetail, 1),
     maxZombies: Math.min(preset.maxZombies, 26),
     zombieShadowDistance: Math.min(preset.zombieShadowDistance, 12),
     animLodDistance: Math.min(preset.animLodDistance, 15),

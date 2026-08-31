@@ -86,10 +86,16 @@ try {
       (b) => b.y1 > 0.9 && b.containsXZ(x, zz, -0.05),
     );
 
-    // A wall to throw them at: the tallest box near the middle of the arena.
+    // A wall to throw them at: a real building, not a fence.
+    //
+    // Picking simply "the biggest box near the middle" found a chain-link run,
+    // which is 2 m tall, 20 cm thick and thirty long — a huge bounding radius
+    // and nothing you can stand a body off. Requiring depth as well as height
+    // makes this pick a building whatever the level generator's RNG does.
     let wall = null;
     for (const b of level.collision.boxes) {
-      if (b.y1 < 2 || Math.hypot(b.cx, b.cz) > 30) continue;
+      if (b.y1 < 4 || b.hx < 3 || b.hz < 3) continue;
+      if (Math.hypot(b.cx, b.cz) > 46) continue;
       if (!wall || b.br > wall.br) wall = b;
     }
     const out = { thrown: 0, inside: 0, wall: wall ? [Math.round(wall.cx), Math.round(wall.cz)] : null };
