@@ -22,7 +22,9 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  # write, not read: the APK job publishes the installable build as a release
+  # asset so there is a plain link to it.
+  contents: write
 
 jobs:
   apk:
@@ -103,6 +105,40 @@ jobs:
           name: night-of-the-risen-release-apk-unsigned
           path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: warn
+
+      - name: Publish the APK to a release
+        # Actions artifacts can only be fetched by someone signed in to GitHub,
+        # from a page, as a zip — which is no use when what you want is to open
+        # a link on the phone you are installing on. A release asset is a plain
+        # file on a permanent URL, so that is where the installable build goes.
+        #
+        # The tag is rolling: every build replaces the asset behind the same
+        # link rather than leaving a trail of releases to pick through.
+        if: github.ref_name == 'claude/ue5-zombie-game-zo0cjg'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          APK=$(find android/app/build/outputs/apk/debug -name '*.apk' | head -1)
+          cp "$APK" night-of-the-risen.apk
+          # Written to a file rather than a shell variable: the notes are
+          # multi-line, and a quoted string here would carry this block's YAML
+          # indentation into every line of them.
+          {
+            echo 'Debug build, signed with the Android debug key. Installs'
+            echo 'directly on a phone with no signing step.'
+            echo
+            echo "Commit \`${GITHUB_SHA:0:8}\`, build ${GITHUB_RUN_NUMBER}: $(git log -1 --pretty=%s)"
+          } > notes.md
+          TITLE="Latest APK (build ${GITHUB_RUN_NUMBER})"
+          if gh release view latest-apk >/dev/null 2>&1; then
+            gh release edit latest-apk --title "$TITLE" --notes-file notes.md
+            gh release upload latest-apk night-of-the-risen.apk --clobber
+          else
+            gh release create latest-apk night-of-the-risen.apk \
+              --title "$TITLE" --notes-file notes.md --prerelease
+          fi
+          echo "APK: $(gh release view latest-apk --json url --jq .url)" >> "$GITHUB_STEP_SUMMARY"
 
   web:
     name: Headless browser checks
