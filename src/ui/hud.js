@@ -200,7 +200,10 @@ export class HUD {
       const d = document.createElement('div');
       d.className = 'perk';
       d.style.color = p.color;
-      d.textContent = p.name.slice(0, 2);
+      // Initials, not the first two letters: "DOUBLE TAP" abbreviated by
+      // truncation reads as the word "DO", and "SPEED COLA" as "SP". One
+      // letter per word is how a player expects a chip to be labelled.
+      d.textContent = p.name.split(/[\s-]+/).filter(Boolean).map((w) => w[0]).join('').slice(0, 2);
       d.title = `${p.name} — ${p.blurb}`;
       this.el.perks.appendChild(d);
     }

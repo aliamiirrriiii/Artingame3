@@ -684,8 +684,12 @@ export class Effects {
       }
     };
 
+    // Rough and dark. At 5 cm across a smooth chunk is mostly specular, and
+    // the highlight reads as bone or litter rather than meat — a scatter of
+    // pale yellow flecks over the blood instead of pieces of what was
+    // standing there.
     const gibMat = new THREE.MeshStandardMaterial({
-      color: 0x5e1010, roughness: 0.55, metalness: 0.0, envMapIntensity: 0.7,
+      color: 0x4e1212, roughness: 0.78, metalness: 0.0, envMapIntensity: 0.3,
     });
     this.gibs = new GibField(scene, 120, gibMat);
     this.gibs.onSplat = (x, y, z, nx, ny, nz, speed) => {
@@ -773,8 +777,8 @@ export class Effects {
       this.smoke.emit({
         x: pos.x + dir.x * 0.3, y: pos.y + dir.y * 0.3, z: pos.z + dir.z * 0.3,
         vx: dir.x * 2.2 + gauss() * 0.4, vy: dir.y * 2.2 + 0.5, vz: dir.z * 2.2 + gauss() * 0.4,
-        life: rand(0.5, 0.9), size: rand(0.5, 0.9) * scale, drag: 2.6, gravity: -0.08,
-        grow: 3.2, fadeIn: 0.2,
+        life: rand(0.5, 0.9), size: rand(0.24, 0.44) * scale, drag: 2.6, gravity: -0.08,
+        grow: 2.2, fadeIn: 0.2,
         r0: 0.35, g0: 0.33, b0: 0.30, r1: 0.12, g1: 0.12, b1: 0.13,
       });
     }
@@ -803,8 +807,12 @@ export class Effects {
         vx: normal.x * rand(0.5, 2.2) + gauss() * 0.5,
         vy: normal.y * rand(0.5, 2.2) + gauss() * 0.5 + 0.4,
         vz: normal.z * rand(0.5, 2.2) + gauss() * 0.5,
-        life: rand(0.5, 1.1), size: rand(0.25, 0.6), drag: 2.4, gravity: 0.12,
-        grow: 2.6, fadeIn: 0.15,
+        // A bullet knocks a puff off a wall, not a smoke screen. The old
+        // figures grew each of these to better than two metres across, so a
+        // few rounds into the same wall put a solid grey ball in front of the
+        // player at the exact spot they were aiming.
+        life: rand(0.35, 0.8), size: rand(0.10, 0.24), drag: 3.0, gravity: 0.12,
+        grow: 1.6, fadeIn: 0.12,
         r0: 0.42, g0: 0.40, b0: 0.36, r1: 0.16, g1: 0.15, b1: 0.14,
       });
     }

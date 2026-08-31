@@ -126,12 +126,13 @@ export function makeSplatTexture(size = 256) {
       ctx.fillStyle = 'rgba(255,255,255,1)';
       ctx.fill();
 
-      // A halo that hugs the body rather than surrounding it. Reach any
-      // further and the gap between the body's ragged edge and the halo's
-      // circle shows up as a pale ring around every mark — a hundred fried
-      // eggs on the pavement.
-      const g = ctx.createRadialGradient(mx, my, R * 0.8, mx, my, R * 1.06);
-      g.addColorStop(0, 'rgba(255,255,255,0.4)');
+      // A soft skirt around the body so the edge feathers into the surface
+      // instead of ending on a line. Alpha is coverage now, not a multiply
+      // strength, so a partly covered edge simply blends toward the ground —
+      // which is what let this go back to being generous.
+      const g = ctx.createRadialGradient(mx, my, R * 0.68, mx, my, R * 1.18);
+      g.addColorStop(0, 'rgba(255,255,255,0.62)');
+      g.addColorStop(0.55, 'rgba(255,255,255,0.30)');
       g.addColorStop(1, 'rgba(255,255,255,0)');
       ctx.fillStyle = g;
       ctx.fillRect(ox, oy, cell, cell);

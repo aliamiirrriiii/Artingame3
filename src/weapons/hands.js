@@ -43,6 +43,9 @@ const HAND_SCALE = 0.266;
  * a turn puts the knuckles where a batter's are.
  */
 const MELEE_ROLL = Math.PI;
+// How far the fingers close on a shaft. The authored hand is all but open;
+// this is the flexion that turns it into a grip.
+const MELEE_CURL = 0.55;
 
 /** Natural palm-to-palm distance in the authored pose, in metres. */
 export const NATURAL_SPAN = 0.235;
@@ -97,18 +100,18 @@ const FIT = {
   // Improvised melee. A bat is held with both fists together at the butt, a
   // wet-floor sign at two points a foot apart, a drill in one hand — the span
   // is most of what tells one hold from another.
-  bat:      { span: 0.135 },
+  bat:      { span: 0.085, supportBack: true },
   // Two of these are flat rather than round, and the roll about the shaft
   // decides whether you are looking at a blade or at a line. A machete turned
   // edge-on to the camera is invisible; a wet-floor sign turned face-on is a
   // wall across half the screen.
-  machete:  { span: 0.090, gripRoll: 1.57 },
-  sign:     { span: 0.300, gripRoll: 4.71 },
-  pan:      { span: 0.105 },
+  machete:  { span: 0.055, supportBack: true, gripRoll: 1.57 },
+  sign:     { span: 0.115, supportBack: true, gripRoll: 4.71 },
+  pan:      { span: 0.055, supportBack: true },
   drill:    { oneHanded: true },
-  ukulele:  { span: 0.260 },
-  axe:      { span: 0.230 },
-  sledge:   { span: 0.260 },
+  ukulele:  { span: 0.100, supportBack: true },
+  axe:      { span: 0.090, supportBack: true },
+  sledge:   { span: 0.095, supportBack: true },
 };
 
 /**
@@ -219,6 +222,33 @@ export function attachHands(group, spec, template, opts = {}) {
   const bones = {};
   inst.traverse((o) => { if (o.name) bones[o.name] = o; });
 
+  const axis = group.userData.gripAxis || fit.gripAxis;
+
+  /*
+   * Close the fist before measuring it.
+   *
+   * The authored hands are holding a rifle, and a rifle is held with the
+   * fingers barely bent: the grip is a wide column and the index finger is
+   * out on a trigger. Measured off the rig, the middle finger is within a
+   * centimetre of straight. Lay a 30 mm bat handle in that hand and the
+   * result is an open claw with the shaft resting against the outside of it —
+   * which is precisely what "not gripping" looks like, however carefully the
+   * hand has been positioned.
+   *
+   * So the fingers are curled first, and everything downstream is measured
+   * off the curled hand rather than the authored one.
+   */
+  const curl = fit.curl ?? (axis ? MELEE_CURL : 0);
+  if (curl) {
+    inst.updateMatrixWorld(true);
+    closeFist(bones, 'r', curl);
+    closeFist(bones, 'l', curl * 0.85);
+    inst.updateMatrixWorld(true);
+  }
+  const fist = measureFist(bones, 'r');
+  const gripR = fist.grip || template.gripR;
+  const wrapR = fist.wrap || template.wrapR;
+
   inst.traverse((o) => {
     if (!o.isMesh && !o.isSkinnedMesh) return;
     o.castShadow = false;
@@ -235,11 +265,10 @@ export function attachHands(group, spec, template, opts = {}) {
   // Scale to metres and slide the rig so the trigger palm lands on the grip.
   const holder = new THREE.Group();
   holder.name = 'hands';
-  const axis = group.userData.gripAxis || fit.gripAxis;
   // A weapon that says which way it runs is held in a closed fist, and the
   // anchor is the channel through that fist. Anything else is placed by the
   // palm, which is what the guns were framed against.
-  const anchor = (axis && template.gripR) ? template.gripR : template.palmR;
+  const anchor = (axis && gripR) ? gripR : template.palmR;
   inst.scale.setScalar(HAND_SCALE);
   inst.position.copy(anchor).multiplyScalar(-HAND_SCALE);
   holder.add(inst);
@@ -269,11 +298,11 @@ export function attachHands(group, spec, template, opts = {}) {
    * freedom the alignment leaves, and the difference between a fist closed
    * over a handle and one closed under it.
    */
-  if (axis && template.wrapR && group.userData.parts?.body) {
+  if (axis && wrapR && group.userData.parts?.body) {
     const from = new THREE.Vector3(...axis).normalize();
-    const q = new THREE.Quaternion().setFromUnitVectors(from, template.wrapR);
+    const q = new THREE.Quaternion().setFromUnitVectors(from, wrapR);
     const roll = fit.gripRoll ?? MELEE_ROLL;
-    if (roll) q.premultiply(new THREE.Quaternion().setFromAxisAngle(template.wrapR, roll));
+    if (roll) q.premultiply(new THREE.Quaternion().setFromAxisAngle(wrapR, roll));
 
     const body = group.userData.parts.body;
     body.quaternion.premultiply(q);
@@ -348,6 +377,24 @@ function gripPoint(group, bounds, fit) {
  */
 function supportPoint(group, bounds, grip, fit) {
   const span = fit.span ?? DEFAULT_SPAN;
+
+  if (fit.supportBack) {
+    /*
+     * A two-handed melee weapon is held with both hands together at the butt
+     * of the handle — the support hand *below* the main one, toward the knob.
+     * Reaching forward along the shaft the way a rifle's support hand does
+     * sends the arm up and across the body, and the result is one forearm
+     * lying horizontally across the middle of the screen with a stump on the
+     * end of it. Both hands also stay on the shaft's own axis: a bat handle
+     * is 30 mm thick, and the 30 mm sideways bias a rifle's fore-end needs
+     * puts the second hand entirely beside this one.
+     */
+    const z = Math.min(bounds.max.z - 0.02, grip.z + span);
+    const p = new THREE.Vector3(grip.x, grip.y, z);
+    if (fit.support) p.add(new THREE.Vector3(...fit.support));
+    return p;
+  }
+
   const z = Math.max(bounds.min.z + 0.035, grip.z - span);
 
   // Height comes from the authored pose, not from the silhouette. The support
@@ -389,6 +436,77 @@ function bandAt(group, z, half) {
 
 /** Collapses a bone chain out of sight, for a one-handed hold. */
 function collapse(bone) { if (bone) bone.scale.setScalar(0.0001); }
+
+/**
+ * Curls a hand's fingers shut.
+ *
+ * Every finger flexes about the same axis — the line through the knuckles —
+ * and the joints of one finger flex about axes parallel to it, so one world
+ * axis drives the whole hand. The distal joints turn further than the
+ * knuckles, which is the difference between a fist and a flat paddle.
+ *
+ * Which way is "shut" is measured rather than assumed: whichever direction
+ * brings the middle fingertip nearer the wrist. Assuming it costs a hand bent
+ * backwards on half the rigs it might ever be pointed at.
+ */
+function closeFist(bones, side, curl, thumbCurl = curl * 0.5) {
+  const wrist = bones[`${side}_wrist`];
+  const iLow = bones[`${side}_index_low`];
+  const pLow = bones[`${side}_pinky_low`];
+  const mLow = bones[`${side}_middle_low`];
+  const mTip = bones[`${side}_middle_tip`];
+  if (!wrist || !iLow || !pLow || !mLow || !mTip) return;
+
+  wrist.updateWorldMatrix(true, true);
+  const axis = worldPos(pLow).sub(worldPos(iLow)).normalize();
+  if (side === 'l') axis.negate();     // mirrored hand, mirrored knuckle line
+
+  const w = worldPos(wrist), k = worldPos(mLow), t = worldPos(mTip);
+  const reach = (sign) => t.clone().sub(k)
+    .applyQuaternion(new THREE.Quaternion().setFromAxisAngle(axis, sign * 0.6))
+    .add(k).distanceTo(w);
+  const sign = reach(1) < reach(-1) ? 1 : -1;
+
+  const JOINTS = [['low', 0.9], ['mid', 1.2], ['tip', 0.7]];
+  for (const finger of ['index', 'middle', 'ring', 'pinky']) {
+    for (const [joint, k2] of JOINTS) {
+      bend(bones[`${side}_${finger}_${joint}`], axis, sign * curl * k2);
+    }
+  }
+  // The thumb lies across the front of the fingers rather than curling in
+  // with them, so it goes less far.
+  for (const [joint, k2] of [['low', 1], ['mid', 0.8], ['tip', 0.5]]) {
+    bend(bones[`${side}_thumb_${joint}`], axis, sign * thumbCurl * k2);
+  }
+}
+
+/** Rotates one bone about a world axis, expressed in its parent's frame. */
+function bend(bone, axis, radians) {
+  if (!bone || !radians) return;
+  bone.updateWorldMatrix(true, false);
+  const delta = new THREE.Quaternion().setFromAxisAngle(axis, radians);
+  const parent = new THREE.Quaternion();
+  bone.parent.getWorldQuaternion(parent);
+  const own = new THREE.Quaternion();
+  bone.getWorldQuaternion(own);
+  bone.quaternion.copy(parent.invert().multiply(delta).multiply(own));
+}
+
+/**
+ * The channel through a fist and the direction a shaft runs through it,
+ * measured off a specific hand rather than off the template — the fingers
+ * have moved since the template was taken.
+ */
+function measureFist(bones, side) {
+  const low = bones[`${side}_middle_low`];
+  const tip = bones[`${side}_middle_tip`];
+  const iLow = bones[`${side}_index_low`];
+  const pLow = bones[`${side}_pinky_low`];
+  return {
+    grip: (low && tip) ? worldPos(low).lerp(worldPos(tip), 0.5) : null,
+    wrap: (iLow && pLow) ? worldPos(pLow).sub(worldPos(iLow)).normalize() : null,
+  };
+}
 
 /**
  * Two-bone IK. Rotates `upper` and `fore` so that `tip` reaches `target`,

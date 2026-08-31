@@ -410,6 +410,14 @@ try {
     for (const n of names) report.rig.bones[n] = at(n);
     report.rig.palmR = r3(tpl.palmR);
     report.rig.wrapR = tpl.wrapR ? r3(tpl.wrapR) : null;
+    // Every bone in the rig, not just the ones the fit already uses: which
+    // finger joints exist decides whether the fist can be closed on a shaft.
+    report.rig.all = Object.keys(tpl.bones).filter((n) => tpl.bones[n]?.isBone).sort();
+    // Who is parented to whom: the fit assumes the fingers hang off the wrist,
+    // and a rig where they do not is a rig where every measurement taken from
+    // the wrist is measuring the wrong thing.
+    report.rig.parents = {};
+    for (const n of report.rig.all) report.rig.parents[n] = tpl.bones[n].parent?.name || null;
     report.ok = report.errors.length === 0;
     report.done = true;
     return;
@@ -561,6 +569,7 @@ try {
     if (q.get('nohands') !== '1') attachHands(g, WEAPONS[vm], handsTemplate(assets), {
       bias: q.get('hb') ? q.get('hb').split(',').map(Number) : null,
       gripRoll: q.get('gr') !== null ? Number(q.get('gr')) : null,
+      pole: q.get('pole') ? q.get('pole').split(',').map(Number) : null,
     });
     const rig = new THREE.Group();
     rig.add(g);
@@ -573,8 +582,54 @@ try {
     rig.rotation.set(0.022, 0.055, -0.018);
     scene.add(rig);
     const cam = new THREE.PerspectiveCamera(75, W / H, 0.01, 40);
+    // Pull the eye back with ?back=: at the real eye position an arm that has
+    // ended up somewhere wrong is simply off screen, which says nothing about
+    // where it went.
+    cam.position.z = Number(q.get('back') || 0);
     const b = new THREE.Box3().setFromObject(g);
+    // Where each hand actually ended up, in the weapon's own space, so a
+    // missing second hand can be told apart from one that is merely out of
+    // frame.
+    const wristAt = (name) => {
+      const bone = g.getObjectByName(name);
+      if (!bone) return null;
+      g.updateMatrixWorld(true);
+      const v = new THREE.Vector3().setFromMatrixPosition(bone.matrixWorld);
+      return g.worldToLocal(v).toArray().map((n) => +n.toFixed(3));
+    };
     report.weapons.push({ id: vm, scale: cfg.scale, offset: cfg.offset,
+      grip: g.userData.handPoints?.grip?.toArray().map((n) => +n.toFixed(3)) || null,
+      support: g.userData.handPoints?.support?.toArray().map((n) => +n.toFixed(3)) || null,
+      rWrist: wristAt('r_wrist'), lWrist: wristAt('l_wrist'),
+      rFist: wristAt('r_middle_mid'), lFist: wristAt('l_middle_mid'),
+      worldPts: (() => {
+        g.updateMatrixWorld(true);
+        const o = {};
+        for (const n of ['r_wrist', 'r_middle_low', 'r_middle_mid', 'l_wrist', 'l_middle_low']) {
+          const b = g.getObjectByName(n);
+          o[n] = b ? new THREE.Vector3().setFromMatrixPosition(b.matrixWorld)
+            .toArray().map((v) => +v.toFixed(4)) : null;
+        }
+        return o;
+      })(),
+      gScale: g.scale.toArray().map((n) => +n.toFixed(4)),
+      gWorldScale: g.getWorldScale(new THREE.Vector3()).toArray().map((n) => +n.toFixed(4)),
+      holderScale: g.userData.hands
+        ? g.userData.hands.getWorldScale(new THREE.Vector3()).toArray().map((n) => +n.toFixed(4))
+        : null,
+      chain: (() => {
+        const out = [];
+        g.traverse((o) => { if (o.name === 'r_wrist') out.push(o.parent?.name || '?'); });
+        return out;
+      })(),
+      wristToKnuckle: (() => {
+        const a = g.getObjectByName('r_wrist'), b = g.getObjectByName('r_middle_low');
+        if (!a || !b) return null;
+        g.updateMatrixWorld(true);
+        return +new THREE.Vector3().setFromMatrixPosition(a.matrixWorld)
+          .distanceTo(new THREE.Vector3().setFromMatrixPosition(b.matrixWorld)).toFixed(4);
+      })(),
+      rElbow: wristAt('r_forearm'), lElbow: wristAt('l_forearm'),
       box: { min: b.min.toArray().map(v => +v.toFixed(3)), max: b.max.toArray().map(v => +v.toFixed(3)) } });
     renderer.render(scene, cam);
     report.ok = report.errors.length === 0;

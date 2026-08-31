@@ -220,6 +220,16 @@ try {
       // A forearm, and then the same shot again once it has been taken off.
       // Fired inward from outside the body so the arm is the outermost thing
       // on the line — some archetypes hold theirs across the chest.
+      // Same treatment as the chest shot, for the same reason: a hunched
+      // zombie holds its arms across its ribs, so whether the torso or the
+      // forearm is the outermost thing on this line depends on the pose
+      // phase, which is random. This probe is asking whether the forearm
+      // capsule follows the bone, not which of two perfectly good hits the
+      // ray finds first.
+      for (let j = 0; j < HITBOX_DEFS.length; j++) {
+        const part = HITBOX_DEFS[j].part;
+        if (part === 'chest' || part === 'gut' || part === 'head') z.hitboxes[j].ok = false;
+      }
       const ap = mid(box('arm', 1));
       const ao = V(ap.x - z.pos.x, 0, ap.z - z.pos.z);
       if (ao.length() < 0.05) ao.set(1, 0, 0);

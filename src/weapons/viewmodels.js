@@ -362,14 +362,36 @@ function sectionCentre(root, z, half) {
   const n = pts.length / 2;
   if (!n) return { x: 0, y: 0 };
   x /= n; y /= n;
+
+  /*
+   * The centroid where the centroid is in the material, the nearest vertex
+   * where it is not.
+   *
+   * A handle's cross-section is a ring, and its vertices average to the axis
+   * — which is the line that has to run through the fist. Snapping to the
+   * nearest vertex instead put the grip station on the *surface*, out by the
+   * handle's radius every time, in whatever direction the modeller happened
+   * to put a vertex; a hand placed there closes beside the shaft rather than
+   * round it.
+   *
+   * But not everything held has a handle. A wet-floor sign is an A-frame, and
+   * the centroid of a slice through it lands in the gap between the two
+   * panels — nowhere near anything to hold. So the centroid is only trusted
+   * when there is material close to it.
+   */
   let best = Infinity, bx = x, by = y;
   for (let i = 0; i < n; i++) {
     const dx = pts[i * 2] - x, dy = pts[i * 2 + 1] - y;
     const d = dx * dx + dy * dy;
     if (d < best) { best = d; bx = pts[i * 2]; by = pts[i * 2 + 1]; }
   }
-  return { x: bx, y: by };
+  // 30 mm: wider than any handle's radius, narrower than any real gap.
+  return Math.sqrt(best) <= 0.030 ? { x, y } : { x: bx, y: by };
 }
+
+// A half-turn about world Y: what swaps a prop end for end whichever way it
+// was modelled.
+const FLIP_Y = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
 
 /** Turns an object so its longest dimension runs down -Z. */
 function alignLongAxis(root) {
@@ -546,7 +568,17 @@ export function buildAdoptedWeapon(spec, cfg, assets, mats) {
     const inset = cfg.gripInset ?? 0.10;
     const back = cfg.gripEnd ? cfg.gripEnd === 'max' : thinEndIsMax(src, box);
     if (!back) {
-      src.rotation.y += Math.PI;
+      /*
+       * The half-turn goes on the *left*, about the world Y.
+       *
+       * `rotation.y += PI` looks like the same thing and is not. Euler XYZ
+       * applies Y before X, so on anything `alignLongAxis` had to stand up
+       * out of Y — which is how a ukulele and a wet-floor sign are modelled —
+       * adding to `rotation.y` spins the prop about its own long axis instead
+       * of swapping its ends. It rolls, the ends stay where they were, and
+       * the hand is left holding the ukulele by its body.
+       */
+      src.quaternion.premultiply(FLIP_Y);
       src.updateMatrixWorld(true);
       box.setFromObject(src);
     }
