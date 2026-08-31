@@ -545,7 +545,22 @@ export class HUD {
 
   togglePerf(on) { this.el.perf.classList.toggle('show', on); }
 
-  flashLowFps(on) { this.el.lowfps.classList.toggle('show', on); }
+  /**
+   * The adaptive scaler drops render resolution whenever the frame budget is
+   * missed, which on a marginal machine is most of the time — and this notice
+   * simply stayed up for as long as that was true, so the player read "quality
+   * reduced" across the top of every frame they ever played. It is a notice,
+   * not an error: say it once, take it away, and stay quiet for a while.
+   */
+  flashLowFps(on) {
+    clearTimeout(this._lowFpsHide);
+    if (!on) { this.el.lowfps.classList.remove('show'); return; }
+    const now = performance.now();
+    if (now - (this._lowFpsAt ?? -1e9) < 30000) return;
+    this._lowFpsAt = now;
+    this.el.lowfps.classList.add('show');
+    this._lowFpsHide = setTimeout(() => this.el.lowfps.classList.remove('show'), 4000);
+  }
 
   setHudVisible(v) {
     for (const id of ['hud-tl', 'hud-tr', 'hud-bl', 'hud-br']) {
