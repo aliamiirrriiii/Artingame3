@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Pool, rand, randInt, gauss, clamp, TAU } from '../core/util.js';
-import { MarkField, PoolField, RunnerField, makeSplatTexture } from './blood.js';
+import { MarkField, PoolField, RunnerField, makeSplatTexture, makeHoleTexture } from './blood.js';
 
 /**
  * All transient visuals: particles, gore chunks, decals, tracers and impact
@@ -295,119 +295,6 @@ class ParticleField {
 
 // ------------------------------------------------------------------ decals
 
-/**
- * Bullet holes and blood splatter, as instanced quads with multiply blending.
- * Multiply is the right call here: a decal darkens whatever it lands on, and
- * fading it back toward white is a perfect no-op, so decals dissolve away
- * without ever showing a rectangular edge.
- */
-class DecalField {
-  constructor(scene, texture, capacity) {
-    const geo = new THREE.PlaneGeometry(1, 1);
-    const mat = new THREE.MeshBasicMaterial({
-      map: texture,
-      transparent: true,
-      // Multiply, so a decal darkens whatever it lands on rather than pasting
-      // a flat colour over it — and so the fade in `update` can work by
-      // lerping the instance colour toward white, which an InstancedMesh can
-      // do and a per-instance alpha cannot.
-      blending: THREE.MultiplyBlending,
-      // Not optional: three refuses to set up multiply blending without it,
-      // and silently leaves the material blending-free — an opaque quad.
-      premultipliedAlpha: true,
-      depthWrite: false,
-      polygonOffset: true,
-      polygonOffsetFactor: -4,
-      polygonOffsetUnits: -4,
-      side: THREE.DoubleSide,
-      fog: true,
-      toneMapped: false,
-    });
-
-    this.mesh = new THREE.InstancedMesh(geo, mat, capacity);
-    this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.mesh.frustumCulled = false;
-    this.mesh.renderOrder = 3;
-    this.mesh.count = 0;
-    this.mesh.castShadow = false;
-    this.mesh.receiveShadow = false;
-    scene.add(this.mesh);
-
-    this.capacity = capacity;
-    this.cursor = 0;
-    this.live = 0;
-    this.age = new Float32Array(capacity);
-    this.ttl = new Float32Array(capacity);
-    this.baseColor = new Float32Array(capacity * 3);
-    this._m = new THREE.Matrix4();
-    this._q = new THREE.Quaternion();
-    this._roll = new THREE.Quaternion();
-    this._up = new THREE.Vector3(0, 0, 1);
-    this._s = new THREE.Vector3();
-    this._p = new THREE.Vector3();
-    this._c = new THREE.Color();
-  }
-
-  /** Places a decal on a surface with the given normal. */
-  place(point, normal, size, color, ttl = 25) {
-    const i = this.cursor;
-    this.cursor = (this.cursor + 1) % this.capacity;
-    this.live = Math.min(this.live + 1, this.capacity);
-    this.mesh.count = this.live;
-
-    this._q.setFromUnitVectors(this._up, normal);
-    // Random roll so repeated hits on one wall never look stamped.
-    this._roll.setFromAxisAngle(this._up, rand(0, TAU));
-    this._q.multiply(this._roll);
-    this._s.set(size, size, size);
-    this._p.set(
-      point.x + normal.x * 0.012,
-      point.y + normal.y * 0.012,
-      point.z + normal.z * 0.012,
-    );
-    this._m.compose(this._p, this._q, this._s);
-    this.mesh.setMatrixAt(i, this._m);
-    this.mesh.instanceMatrix.needsUpdate = true;
-
-    this._c.set(color);
-    this.baseColor[i * 3] = this._c.r;
-    this.baseColor[i * 3 + 1] = this._c.g;
-    this.baseColor[i * 3 + 2] = this._c.b;
-    this.mesh.setColorAt(i, this._c);
-    if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
-
-    this.age[i] = 0;
-    this.ttl[i] = ttl;
-    return i;
-  }
-
-  update(dt) {
-    if (!this.live) return;
-    let dirty = false;
-    for (let i = 0; i < this.live; i++) {
-      if (this.ttl[i] <= 0) continue;
-      this.age[i] += dt;
-      const t = this.age[i] / this.ttl[i];
-      if (t >= 1) { this.ttl[i] = 0; }
-      // Only the last 30% of life fades, so decals stay crisp while they matter.
-      const f = t < 0.7 ? 0 : (t - 0.7) / 0.3;
-      if (f > 0) {
-        const k = Math.min(1, f);
-        this._c.setRGB(
-          this.baseColor[i * 3] + (1 - this.baseColor[i * 3]) * k,
-          this.baseColor[i * 3 + 1] + (1 - this.baseColor[i * 3 + 1]) * k,
-          this.baseColor[i * 3 + 2] + (1 - this.baseColor[i * 3 + 2]) * k,
-        );
-        this.mesh.setColorAt(i, this._c);
-        dirty = true;
-      }
-    }
-    if (dirty && this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
-  }
-
-  clear() { this.live = 0; this.cursor = 0; this.mesh.count = 0; }
-}
-
 // -------------------------------------------------------------------- gibs
 
 /** Chunks of zombie. Ballistic, they bounce once or twice, then sink and vanish. */
@@ -646,7 +533,11 @@ export class Effects {
     this.dust = new ParticleField(scene, assets.tex('dust'), Math.floor(B * 0.2), { additive: false });
     this.fields = [this.sparks, this.smoke, this.blood, this.dust];
 
-    this.bulletDecals = new DecalField(scene, assets.tex('decalAlbedo'), Math.floor(preset.decalBudget * 0.55));
+    // Bullet holes are marks, not multiply-blended quads. Multiplying a dark
+    // texture into a lit surface does not make a hole in the wall, it makes a
+    // hole in the light: two shotgun blasts into one place and there is a
+    // black disc floating on the masonry.
+    this.bulletDecals = new MarkField(scene, makeHoleTexture(256), Math.floor(preset.decalBudget * 0.9));
 
     // Blood: marks where it landed, pools where it gathered, runners for what
     // is still on its way down a wall.
@@ -719,6 +610,7 @@ export class Effects {
   setFog(color, density) {
     for (const f of this.fields) f.setFog(color, density);
     this.bloodDecals.setFog(color, density);
+    this.bulletDecals.setFog(color, density);
     this.pools.setFog(color, density);
   }
 
@@ -728,6 +620,7 @@ export class Effects {
    */
   setLighting(color) {
     this.bloodDecals.setLight(color.r, color.g, color.b);
+    this.bulletDecals.setLight(color.r, color.g, color.b);
     this.pools.setLight(color.r, color.g, color.b);
   }
 
@@ -816,7 +709,10 @@ export class Effects {
         r0: 0.42, g0: 0.40, b0: 0.36, r1: 0.16, g1: 0.15, b1: 0.14,
       });
     }
-    this.bulletDecals.place(point, normal, rand(0.16, 0.30), metal ? 0x707070 : 0x3a3a3a, 30);
+    this.bulletDecals.place(
+      point.x, point.y, point.z, normal.x, normal.y, normal.z,
+      rand(0.13, 0.24), metal ? 0x5c5c5f : 0x232326, 0.85, 30,
+    );
   }
 
   /**
@@ -929,7 +825,7 @@ export class Effects {
         r0: 0.55, g0: 0.30, b0: 0.16, r1: 0.10, g1: 0.10, b1: 0.11,
       });
     }
-    this.bulletDecals.place({ x: pos.x, y: 0.02, z: pos.z }, UP, radius * 0.9, 0x1a1a1a, 45);
+    this.bulletDecals.place(pos.x, 0.02, pos.z, 0, 1, 0, radius * 0.9, 0x141414, 0.9, 45);
   }
 
   /** Continuous flame cone for the flamethrower. */
@@ -1019,4 +915,3 @@ export class Effects {
   }
 }
 
-const UP = new THREE.Vector3(0, 1, 0);

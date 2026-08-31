@@ -113,7 +113,12 @@ export const MODEL_VIEWMODELS = {
     adopt: true, melee: true, asset: 'meleeSign',
     scale: 1,
     gripInset: 0.08,
-    basePos: MELEE_HIP, adsPos: MELEE_AIM,
+    // A wet-floor sign really is 60 cm tall and 70 cm long, and at a bat's
+    // carry height that is two yellow bars across the whole right half of the
+    // screen. Carried lower, further out, and turned edge-on, so what is in
+    // frame is the legs rather than the panels — the swing brings it up.
+    basePos: [0.30, -0.60, -0.70], adsPos: [0.24, -0.54, -0.76],
+    rest: [-0.15, 0.50, 0.20],
   },
 
   ukulele: {

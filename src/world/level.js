@@ -96,6 +96,41 @@ export class Level {
     this._batch(matKey).push(g);
   }
 
+  /**
+   * Standing water.
+   *
+   * A puddle has a hard edge — water does — but it does not have a
+   * *rectangular* one, and four fourteen-metre squares of wet asphalt is what
+   * this level had. In the dark that read as reflection; in daylight it reads
+   * as four pale slabs someone left in the road. This is an irregular disc
+   * instead: a fan whose rim wanders on two out-of-phase sine terms seeded off
+   * the puddle's own position, so no two are the same shape and none of them
+   * is a circle either.
+   */
+  puddle(matKey, x, z, r, opts = {}) {
+    const { y = 0.015, seg = 32, wobble = 0.22 } = opts;
+    const tile = TILE_METERS[matKey] || 3;
+    const g = new THREE.CircleGeometry(r, seg);
+    const pos = g.attributes.position;
+    // Vertex 0 is the centre; the rim follows, and its last vertex coincides
+    // with its first — which is why the wobble has to be a continuous
+    // function of the angle rather than per-vertex noise.
+    for (let i = 1; i < pos.count; i++) {
+      const vx = pos.getX(i), vy = pos.getY(i);
+      const a = Math.atan2(vy, vx);
+      const k = 1 + wobble * 0.5 * (Math.sin(a * 3 + x * 0.7) + Math.sin(a * 5 + z * 0.9));
+      pos.setXY(i, vx * k, vy * k);
+    }
+    const uv = g.attributes.uv;
+    for (let i = 0; i < uv.count; i++) {
+      uv.setXY(i, (pos.getX(i) + x) / tile, (pos.getY(i) + z) / tile);
+    }
+    uv.needsUpdate = true;
+    g.rotateX(-Math.PI / 2);
+    g.translate(x, y, z);
+    this._batch(matKey).push(g);
+  }
+
   cylinder(matKey, x, y, z, rTop, rBot, h, opts = {}) {
     const { seg = 12, collide = false, tag = 'world', tileScale = 1 } = opts;
     const tile = (TILE_METERS[matKey] || 3) * tileScale;
@@ -161,10 +196,11 @@ export class Level {
     // change of surface reads underfoot.
     this.ground('concrete', 0, 0, 26, 26, { y: 0.06, tileScale: 0.7 });
 
-    // Standing water where the drains backed up — mirrors the moon and every
-    // muzzle flash, which is most of what sells "wet night street".
-    for (const [px, pz, pr] of [[-14, 22, 7], [19, -12, 6], [0, 38, 9], [-30, -26, 5]]) {
-      this.ground('wetAsphalt', px, pz, pr * 2, pr * 2, { y: 0.015 });
+    // Standing water where the drains backed up. Smaller than the night build
+    // wanted: at seven metres across these are ponds, and in daylight a pond
+    // in the road is a thing you notice rather than a thing you walk over.
+    for (const [px, pz, pr] of [[-14, 22, 4.2], [19, -12, 3.4], [0, 38, 5.2], [-30, -26, 3.0]]) {
+      this.puddle('wetAsphalt', px, pz, pr, { y: 0.015 });
     }
   }
 

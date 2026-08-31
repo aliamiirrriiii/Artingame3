@@ -173,6 +173,80 @@ export function makeSplatTexture(size = 256) {
   return tex;
 }
 
+/**
+ * Bullet holes and the chipping around them: four variants, white, with the
+ * shape in alpha like the splats.
+ *
+ * These used to be a multiply-blended quad of a dark texture, which on a lit
+ * surface is not a hole but an absence of light — a black disc. Two shotgun
+ * blasts into one wall left a hole in the world. Drawn as an albedo mark
+ * instead, a bullet hole is dark grey masonry, and it stays dark grey
+ * whatever is shining on it.
+ */
+export function makeHoleTexture(size = 256) {
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = size;
+  const ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, size, size);
+  const cell = size / ATLAS_CELLS;
+
+  for (let cy = 0; cy < ATLAS_CELLS; cy++) {
+    for (let cx = 0; cx < ATLAS_CELLS; cx++) {
+      const ox = cx * cell, oy = cy * cell;
+      const mx = ox + cell * 0.5, my = oy + cell * 0.5;
+      const R = cell * 0.30;
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(ox + 1, oy + 1, cell - 2, cell - 2);
+      ctx.clip();
+
+      // Spall: a broad, faint ring of dust and chipping.
+      const g = ctx.createRadialGradient(mx, my, R * 0.3, mx, my, R * 1.5);
+      g.addColorStop(0, 'rgba(255,255,255,0.5)');
+      g.addColorStop(0.45, 'rgba(255,255,255,0.22)');
+      g.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(ox, oy, cell, cell);
+
+      // Cracks running out of the hole.
+      ctx.strokeStyle = 'rgba(255,255,255,0.65)';
+      const cracks = 5 + Math.floor(Math.random() * 4);
+      for (let i = 0; i < cracks; i++) {
+        const a = (i / cracks) * TAU + Math.random() * 0.6;
+        ctx.beginPath();
+        ctx.moveTo(mx, my);
+        ctx.lineTo(mx + Math.cos(a) * R * (1.1 + Math.random()), my + Math.sin(a) * R * (1.1 + Math.random()));
+        ctx.lineWidth = cell * (0.004 + Math.random() * 0.006);
+        ctx.stroke();
+      }
+
+      // The hole: a ragged opaque core.
+      const lobes = 8;
+      ctx.beginPath();
+      for (let i = 0; i <= lobes; i++) {
+        const a = (i / lobes) * TAU;
+        const r = R * (0.55 + Math.random() * 0.35);
+        const px = mx + Math.cos(a) * r, py = my + Math.sin(a) * r;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(255,255,255,1)';
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.NoColorSpace;
+  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.generateMipmaps = true;
+  tex.needsUpdate = true;
+  return tex;
+}
+
 function splatMaterial(texture) {
   return new THREE.ShaderMaterial({
     uniforms: {

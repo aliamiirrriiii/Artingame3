@@ -20,7 +20,7 @@ import { clamp, damp } from '../core/util.js';
  * matters only indoors.
  */
 /** Daylight carries far less haze than the night build wanted. */
-const DAY_FOG = 0.5;
+const DAY_FOG = 0.30;
 
 export class Stage {
   constructor(canvas, preset) {
@@ -185,9 +185,12 @@ export class Stage {
     this.scene.environment = envMap;
     this.scene.environmentIntensity = intensity;
     this.scene.background = null;
-    // Half the night density. That fog was tuned to hide the arena's edge in
-    // the dark, where it read as depth; in daylight the same figure turns the
-    // far side of the street into a sheet of milk.
+    // Well under a third of the night density. That fog was tuned to hide the
+    // arena's edge in the dark, where it read as depth; in daylight the same
+    // figure turns the far side of the street into a sheet of milk. Half was
+    // still too much: the arena is 124 m across, and at half density the far
+    // side of it was ninety per cent haze — you could not see the horde start
+    // to move, which is most of what a daylight game is for.
     this.fogDensity = this.preset.fogDensity * DAY_FOG;
     this.scene.fog = new THREE.FogExp2(fog, this.fogDensity);
     this.fogColor = new THREE.Color(fog);
