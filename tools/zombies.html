@@ -121,7 +121,14 @@ try {
       const stat = V(z.pos.x, z.pos.y + z.height * 0.92, z.pos.z);
       out.drift = Math.max(out.drift || 0, stat.distanceTo(hp));
 
-      // Chest from behind, so the raised arms are not in the way.
+      // Chest from behind. The arm boxes are switched off for this one shot:
+      // an arm across the chest is a perfectly good hit, it is just not what
+      // this probe is asking about, and whether one is in the way depends on
+      // the zombie's random pose phase — which made this check pass or fail by
+      // luck rather than by whether the chest capsule is where the chest is.
+      for (let j = 0; j < HITBOX_DEFS.length; j++) {
+        if (HITBOX_DEFS[j].part === 'arm') z.hitboxes[j].ok = false;
+      }
       const cp = mid(box('chest'));
       hit = zm.raycast(V(cp.x, cp.y, cp.z + 4), V(0, 0, -1), 8, {});
       out.checked++;
@@ -134,6 +141,9 @@ try {
       out.checked++;
       if (!hit || hit.zombie !== z) fail(`${z.type}: leg ray missed`);
       else if (hit.part !== 'leg') fail(`${z.type}: leg ray returned ${hit.part}`);
+
+      zm._frameId++;
+      zm._refreshHitboxes(z);
 
       // A forearm, and then the same shot again once it has been taken off.
       // Fired inward from outside the body so the arm is the outermost thing

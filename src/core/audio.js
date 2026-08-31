@@ -334,6 +334,38 @@ export class AudioEngine {
   }
 
   /**
+   * A swing through the air. `heft` runs 0..1 from a drill to a chair.
+   *
+   * Filtered noise sweeping up and back down, which is what a whoosh is: the
+   * band rises as the weapon accelerates past you and falls as it goes away.
+   * A heavy weapon sweeps lower and longer.
+   */
+  swing(pos, heft = 0.5) {
+    if (!this._canPlay()) return;
+    const sp = this._spatial(pos, 3, 26);
+    if (!sp) return;
+    const ctx = this.ctx, t = ctx.currentTime + sp.delay;
+    const dur = 0.18 + heft * 0.22;
+    const out = this._chain(sp, dur + 0.05);
+    out.gain.value = sp.gain * (0.16 + heft * 0.18);
+
+    const n = this._noiseSource(true);
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.Q.value = 0.9 + heft * 0.6;
+    const top = 1500 - heft * 850;
+    f.frequency.setValueAtTime(top * 0.35, t);
+    f.frequency.exponentialRampToValueAtTime(top, t + dur * 0.55);
+    f.frequency.exponentialRampToValueAtTime(top * 0.28, t + dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(1, t + dur * 0.5);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    n.connect(f); f.connect(g); g.connect(out);
+    n.start(t); n.stop(t + dur);
+  }
+
+  /**
    * A limb coming off, or a head. Longer and wetter than `flesh`: a tearing
    * band of filtered noise, a bone snap on top, and a low thud underneath.
    *

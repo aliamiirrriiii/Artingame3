@@ -50,6 +50,7 @@ export class Economy {
     this.boxSpin = null;
 
     this.onNotice = null;        // (text, tone) => void
+    this.onPickup = null;        // (station) => void — an improvised weapon taken
     this.onPurchase = null;      // (station) => void
     this.onStatsChanged = null;  // () => void — recompute perk + power-up stacking
 
@@ -110,6 +111,16 @@ export class Economy {
           action: owned ? 'REFILL AMMO' : 'BUY',
           cost: owned ? Math.round(s.cost * 0.45) : s.cost,
           affordable: this.points >= (owned ? Math.round(s.cost * 0.45) : s.cost),
+          detail: w.tip,
+        };
+      }
+      case 'melee': {
+        const w = WEAPONS[s.weapon];
+        return {
+          title: w.name,
+          action: 'PICK UP',
+          cost: 0,
+          affordable: true,
           detail: w.tip,
         };
       }
@@ -194,12 +205,21 @@ export class Economy {
     }
 
     switch (s.kind) {
+      case 'melee': return this._takePickup(s, p);
       case 'wallbuy': return this._buyWeapon(s, p);
       case 'ammo': return this._buyAmmo(s, p);
       case 'perk': return this._buyPerk(s, p);
       case 'pack': return this._upgradeWeapon(s, p);
       case 'box': return this._openBox(s, p);
     }
+  }
+
+  /** Free, and it goes straight into the hand. */
+  _takePickup(s, p) {
+    if (!this.combat.takeMelee(s.weapon)) return;
+    if (this.onPickup) this.onPickup(s);
+    audio.click(680, 0.05, 0.18);
+    this._notice(`PICKED UP ${p.title.toUpperCase()}`, 'good');
   }
 
   _buyWeapon(s, p) {

@@ -17,6 +17,7 @@ import { Combat } from './weapons/combat.js';
 import { WEAPONS } from './weapons/arsenal.js';
 import { Director, WAVE_STATE } from './game/director.js';
 import { Economy } from './game/economy.js';
+import { Pickups } from './world/pickups.js';
 import { HUD } from './ui/hud.js';
 
 /**
@@ -173,6 +174,11 @@ class Game {
       this.level = new Level(this.stage.scene, this.materials, this.assets, this.preset).build();
       this.effects = new Effects(this.stage.scene, this.assets, this.preset);
       this.effects.setFog(this.stage.fogColor, this.stage.fogDensity);
+      // Improvised weapons, scattered where the navigation says you can walk.
+      // They register themselves as stations, so the prompt, the E key and the
+      // touch button pick them up without knowing what they are.
+      this.pickups = new Pickups(this.stage.scene, this.level, this.assets, this.materials)
+        .build(this.preset.pickups ?? 14);
       this.effects.setViewportHeight(window.innerHeight);
 
       loadText.textContent = 'Waking the dead';
@@ -390,14 +396,22 @@ class Game {
     };
 
     this.director.onAnnounce = (text, tone) => {
+      // A wave break puts some of the street's improvised weapons back. Without
+      // it the map is picked clean by wave four and the loop stops.
+      if (tone === 'clear') this.pickups?.restock(0.7);
       const sub = tone === 'boss' ? 'Kill it before it reaches you'
-        : tone === 'clear' ? 'Spend your points'
+        : tone === 'clear' ? 'Spend what you have, and pick something up'
         : 'Hold the line';
       this.hud.announce(text, sub, tone === 'boss' ? 'boss' : tone === 'clear' ? 'good' : '');
     };
     this.director.onPowerup = (kind, def) => this._grantPowerup(kind, def);
 
     this.economy.onNotice = (t, tone) => this.hud.notice(t, tone);
+    this.economy.onPickup = (s) => this.pickups.take(s);
+    this.combat.onBreak = () => {
+      this.hud.hitMarker(false, false);
+      this.stage.addShake(0.16);
+    };
     this.economy.onStatsChanged = () => this._applyPowerupState();
 
     this.input.onLockChange = (locked) => {
@@ -493,6 +507,8 @@ class Game {
     this.zombies.clear();
     this.effects.clear();
     this.economy.reset();
+    this.pickups?.reset();
+    this.combat.condition.left.clear();
     this.combat.owned = ['knife', 'pistol'];
     this.combat.index = 1;
     this.combat.ammo.clear();
@@ -512,7 +528,11 @@ class Game {
     this.director.start();
     this.runTime = 0;
 
-    for (const id of this.devGive) this.combat.give(id);
+    for (const id of this.devGive) {
+      // An improvised weapon goes into the hand, not into a gun slot.
+      if (WEAPONS[id]?.kind === 'melee' && id !== 'knife') this.combat.takeMelee(id);
+      else this.combat.give(id);
+    }
     // ?give=rifle also equips it, so a headless run can look at a weapon the
     // bot would otherwise never buy.
     if (this.devGive.length) {
@@ -929,6 +949,7 @@ class Game {
     }
 
     this.effects.update(dt);
+    this.pickups?.update(dt, this.elapsed);
     this.level.update(dt, this.player.pos, this.elapsed);
     this.sky.update(dt, this.elapsed, this.stage.camera.position);
     this.stage.update(dt, this.elapsed);

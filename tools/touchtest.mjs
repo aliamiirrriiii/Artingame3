@@ -244,6 +244,107 @@ try {
     movedBoth > 0.5 && Math.abs(p1.yaw - p0.yaw) > 0.05,
     `moved ${movedBoth.toFixed(2)} m, yaw d=${Math.abs(p1.yaw - p0.yaw).toFixed(3)}`);
 
+  /*
+   * The improvised-weapon loop, end to end: something is lying in the street,
+   * you pick it up, it swings through a crowd, it wears out, it breaks, and
+   * you are back on the knife. Every one of those steps is a separate way for
+   * this to be silently broken.
+   */
+  console.log('\nimprovised weapons');
+  const melee = await page.evaluate(() => {
+    const g = window.__game;
+    const items = g.pickups.items.filter((i) => !i.taken);
+    if (!items.length) return { spawned: 0 };
+
+    // Stand on one and take it.
+    const it = items[0];
+    g.player.pos.set(it.pos.x, 0, it.pos.z + 1.0);
+    g.economy.update(0.016, { hit: () => false, buttons: [] }, true);
+    const prompt = g.economy.prompt && g.economy.prompt.action;
+    g.economy.interact(g.economy.nearest);
+
+    const held = g.combat.owned[0];
+    const full = g.combat.swingsLeft;
+
+    // Put a zombie in front and swing until the weapon gives out.
+    const z = g.zombies.alive[0];
+    let hits = 0, swings = 0;
+    if (z) {
+      // In front of the camera, wherever it happens to be pointing. And the
+      // hitboxes hang off the bones, which follow the model's node — moving
+      // z.pos alone leaves them where the zombie used to be.
+      // Somewhere open: pressed against a barricade this measures the level
+      // layout, not the swing.
+      g.player.pos.set(0, 0, 20);
+      g.player.vel.set(0, 0, 0);
+      g.stage.camera.position.set(0, 1.68, 20);
+      g.stage.camera.updateMatrixWorld(true);
+      const cam = g.stage.camera;
+      const fwd = { x: 0, y: 0, z: -1 };
+      const q = cam.quaternion;
+      const put = () => {
+        const v = new (z.pos.constructor)(fwd.x, fwd.y, fwd.z).applyQuaternion(q);
+        z.pos.set(cam.position.x + v.x * 1.3, 0, cam.position.z + v.z * 1.3);
+        z.root.position.copy(z.pos);
+        z.root.updateMatrixWorld(true);
+        z.hbFrame = -1;
+        z.health = 1e9; z.maxHealth = 1e9; z.state = 'pursue';
+      };
+      for (let i = 0; i < 400 && g.combat.owned[0] === held; i++) {
+        put();
+        g.combat.cooldown = 0;
+        const before = g.combat.shotsHit;
+        g.combat._fireMelee(g.combat.spec);
+        g.combat._resolveSwing();
+        g.combat._swing = null;
+        swings++;
+        if (g.combat.shotsHit > before) hits++;
+      }
+    }
+    const hitSomething = hits > 0;
+    // Kept for when it does not: a swing that misses is almost always the
+    // hitbox being somewhere other than where the ray went.
+    let probe = null;
+    if (z && !hitSomething) {
+      const o = new (z.pos.constructor)(), d = new (z.pos.constructor)();
+      g.player.aimRay(o, d);
+      const head = (z.hitboxes || [])[0];
+      probe = {
+        origin: o.toArray().map((v) => +v.toFixed(2)),
+        dir: d.toArray().map((v) => +v.toFixed(2)),
+        zPos: z.pos.toArray().map((v) => +v.toFixed(2)),
+        direct: g.zombies.raycast(o, d, 4, {}) ? 'yes' : 'no',
+        wall: g.level.collision.raycast(o, d, 4, {}) ? 'yes' : 'no',
+        head: head && head.a.toArray().map((v) => +v.toFixed(2)),
+      };
+    }
+    return {
+      spawned: items.length,
+      kinds: [...new Set(g.pickups.items.map((i) => i.weapon))],
+      prompt,
+      held,
+      full,
+      swings,
+      hits,
+      hitSomething,
+      probe,
+      after: g.combat.owned[0],
+      taken: it.taken,
+    };
+  });
+  check('improvised weapons are lying in the street', melee.spawned >= 6,
+    `${melee.spawned} of ${(melee.kinds || []).length} kinds`);
+  check('one can be picked up', melee.prompt === 'PICK UP' && melee.held !== 'knife',
+    `prompt ${melee.prompt}, holding ${melee.held}`);
+  check('it leaves the ground when taken', melee.taken === true);
+  check('it arrives at full condition', melee.full > 0 && melee.full !== Infinity,
+    `${melee.full} swings`);
+  check('the swing connects', melee.hitSomething === true,
+    `${melee.hits} of ${melee.swings} swings landed`
+      + (melee.probe ? ` ${JSON.stringify(melee.probe)}` : ''));
+  check('it wears out and breaks back to the knife', melee.after === 'knife',
+    `${melee.swings} swings from ${melee.full}`);
+
   // A kill is supposed to hold the frame, jolt the camera and throw blood at
   // the lens. None of that is reachable by playing the game headlessly — the
   // scripted inputs rarely finish anything — so one is staged: a zombie moved
@@ -256,7 +357,11 @@ try {
     if (!z) return { staged: false };
     z.pos.set(g.player.pos.x, 0, g.player.pos.z + 1.4);
     z.distToPlayer = 1.4;
+    // Explicit, because an earlier step used this same zombie as a punchbag
+    // and left it on a billion hit points.
+    z.maxHealth = 400;
     z.health = 1;
+    z.severed.clear();
     z.state = 'pursue';
     const before = document.getElementById('gore') ? document.getElementById('gore').childElementCount : 0;
     g.hitStop = 0;

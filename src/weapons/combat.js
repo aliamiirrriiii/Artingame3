@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { WEAPONS, fireInterval, damageAtRange, STARTING_WEAPONS, MAX_CARRIED } from './arsenal.js';
 import { clamp, damp, gauss, rand, randInt, lerp, TAU } from '../core/util.js';
 import { audio } from '../core/audio.js';
+import { sweep, Condition, WIND_TO, STRIKE_AT } from './melee.js';
 
 /**
  * Firing, ammunition, projectiles and damage resolution.
@@ -58,6 +59,15 @@ export class Combat {
     this.onHitMarker = null;   // (crit, killed) => void
     this.onNotice = null;      // (text) => void
     this.onDamage = null;      // (worldPoint, amount, crit) => void
+    this.onBreak = null;       // (spec) => void
+    this.onSwingHit = null;    // (hits, spec, killed) => void
+
+    // Improvised weapons wear out; guns do not.
+    this.condition = new Condition();
+    // A swing in flight: the damage lands part-way through it, not when the
+    // button went down.
+    this._swing = null;
+    this._sweepOut = [];
 
     this.projectiles = [];
     this._projPool = [];
@@ -169,6 +179,30 @@ export class Combat {
     for (const id of this.owned) this.refill(id);
     this.grenades = this.maxGrenades;
   }
+
+  /**
+   * Pick up an improvised weapon.
+   *
+   * It goes into slot 0, over the knife. That is the loop: you are carrying
+   * whatever you last found, it is wearing out, and when it goes the knife is
+   * what is left. Guns are untouched — a bat does not cost you your rifle.
+   */
+  takeMelee(id) {
+    const w = WEAPONS[id];
+    if (!w || w.kind !== 'melee') return false;
+    const old = WEAPONS[this.owned[0]];
+    if (old && old.id !== 'knife') this.condition.forget(old);
+    this.owned[0] = id;
+    this.condition.reset(w);
+    this._initAmmo(id);
+    this.index = 0;
+    this._onSwitch();
+    return true;
+  }
+
+  /** Swings left on whatever is in hand, or Infinity for the knife and guns. */
+  get swingsLeft() { return this.condition.of(this.spec); }
+  get conditionLeft() { return this.condition.fraction(this.spec); }
 
   switchTo(i) {
     if (i < 0 || i >= this.owned.length || i === this.index || this.switchLock > 0) return;
@@ -682,34 +716,99 @@ export class Combat {
     return hit;
   }
 
+  /**
+   * Commit to a swing. Nothing is damaged here — see `_resolveSwing`.
+   *
+   * The delay between the button and the blow is what gives a weapon weight,
+   * and it is the reason a sledgehammer is a different thing to use than a
+   * drill rather than the same thing with a bigger number.
+   */
   _fireMelee(w) {
+    const cycle = fireInterval(w) / this.fireRateMul;
+    const side = this.vm.swing(cycle * 0.92);
+    audio.swing(this.player.pos, w.heft ?? 0.5);
+    this._swing = { w, side, t: 0, at: cycle * 0.92 * STRIKE_AT, done: false };
+    this.shotsFired++;
+  }
+
+  /**
+   * The instant of contact.
+   *
+   * Everything standing in the arc is hit, in the order the weapon met them.
+   * Each takes damage scaled by the part the sweep crossed, so a low stroke
+   * takes legs and a high one takes heads — and the weapon spends a swing of
+   * its life whether or not it connected, because a game where you preserve a
+   * bat by not swinging it is not a game.
+   */
+  _resolveSwing() {
+    const sw = this._swing;
+    if (!sw || sw.done) return;
+    sw.done = true;
+    const w = sw.w;
+
     this.player.aimRay(this._origin, this._dir);
-    audio.click(rand(200, 340), 0.10, 0.22);
+    const hits = sweep(this.zm, this.level && this.level.collision, this._origin,
+      this._dir, w, sw.side, this._sweepOut);
 
-    const cos = Math.cos(w.arc);
-    let best = null, bestD = w.range;
-    for (const z of this.zm.alive) {
-      if (z.state === 'dying' || z.state === 'dead') continue;
-      const dx = z.pos.x - this._origin.x;
-      const dy = (z.pos.y + z.height * 0.6) - this._origin.y;
-      const dz = z.pos.z - this._origin.z;
-      const d = Math.hypot(dx, dy, dz);
-      if (d > w.range || d < 0.001) continue;
-      if ((dx * this._dir.x + dy * this._dir.y + dz * this._dir.z) / d < cos) continue;
-      if (d < bestD) { bestD = d; best = z; }
+    let points = 0, kills = 0, crit = false;
+    for (let i = 0; i < hits.length; i++) {
+      const h = hits[i];
+      // Each body the swing carries through takes a little less than the last.
+      const carry = 1 - i * 0.14;
+      let dmg = w.damage * this._dmgScale() * carry;
+      dmg *= h.head ? (w.headMul ?? 2) : (h.mul ?? 1);
+      if (this.instaKill) dmg = 1e9;
+
+      const r = this.zm.damage(h.zombie, dmg, h.point, this._dir, {
+        crit: h.head,
+        stagger: (w.stagger ?? 0.4) * carry,
+        byPlayer: true,
+        part: h.part,
+      });
+      if (h.head) crit = true;
+      if (r) { points += r.points; if (r.killed) kills++; }
+
+      // A swing throws a body; a bullet does not. Heft is what separates a
+      // sledgehammer from a machete doing the same damage.
+      const push = (w.knockback ?? 2) * (w.heft ?? 0.5) * carry / h.zombie.spec.mass;
+      h.zombie.vel.x += this._dir.x * push;
+      h.zombie.vel.z += this._dir.z * push;
+      h.zombie.vel.y += push * 0.35;
+
+      if (this.onDamage) this.onDamage(h.point, dmg, h.head);
     }
 
-    if (best) {
-      const p = this._tmp.set(best.pos.x, best.pos.y + best.height * 0.72, best.pos.z);
-      // Melee always aims for the neck: generous, and it feels good.
-      const crit = Math.random() < 0.4;
-      const dmg = this.instaKill ? 1e9 : w.damage * this._dmgScale() * (crit ? w.headMul : 1);
-      const r = this.zm.damage(best, dmg, p, this._dir,
-        { crit, stagger: w.stagger, byPlayer: true });
-      this._afterShot(w, r?.points ?? 0, r?.killed ? 1 : 0, crit, true);
-    } else {
-      this._afterShot(w, 0, 0, false, false);
+    if (hits.length) {
+      audio.flesh(hits[0].point, crit);
+      this.shotsHit++;
     }
+    this.stage.addShake((w.shake ?? 0.08) * (hits.length ? 1.8 : 1));
+    this.player.addRecoil(w.recoil.pitch, w.recoil.yaw * sw.side);
+    if (points && this.onPoints) this.onPoints(points, kills ? 'kill' : 'damage');
+    if (hits.length && this.onHitMarker) this.onHitMarker(crit, kills > 0);
+    if (this.onSwingHit) this.onSwingHit(hits, w, kills);
+
+    // Wear. A swing that carried through several bodies costs more than one
+    // that met a single zombie, or air.
+    const cost = hits.length ? 1 + Math.floor((hits.length - 1) * 0.5) : 1;
+    if (this.condition.spend(w, cost)) this._breakWeapon(w);
+  }
+
+  /** The weapon comes apart in your hands. */
+  _breakWeapon(w) {
+    this.vm.muzzleWorld(this._tmp);
+    this.fx.impact(this._tmp, this._dir, 'stone');
+    audio.gore(this._tmp, false);
+    this.stage.addShake(0.18);
+    if (this.onNotice) this.onNotice(`${w.name.toUpperCase()} BROKE`);
+    // Back to the knife, which is the only thing that never breaks.
+    this.condition.forget(w);
+    if (this.owned[0] === w.id) {
+      this.owned[0] = 'knife';
+      this._initAmmo('knife');
+      if (this.index === 0) this._onSwitch();
+    }
+    if (this.onBreak) this.onBreak(w);
   }
 
   _afterShot(w, points, kills, crit, hit) {
@@ -781,6 +880,16 @@ export class Combat {
     this.cooldown -= dt;
     this.switchLock -= dt;
     this.grenadeCooldown -= dt;
+
+    // A swing already in flight lands on its own clock, whatever the player
+    // does with the trigger in between. Ticked before anything can return
+    // early, so a blow committed to always arrives.
+    if (this._swing) {
+      this._swing.t += dt;
+      if (this._swing.t >= this._swing.at) this._resolveSwing();
+      if (this._swing.done) this._swing = null;
+    }
+
     this._updateReload(dt);
     this._updateProjectiles(dt);
     this._updateBurning(dt);
@@ -932,6 +1041,27 @@ export class Combat {
     const w = this.spec;
     const a = this.ammo.get(this.id);
     const up = this.upgrades.has(w.id);
+
+    // An improvised weapon has no magazine, so the ammo readout carries its
+    // condition instead: the big number is swings left, and the pip row that
+    // shows rounds for a gun shows how much of the bat is left. Nothing in the
+    // HUD had to learn a new concept for that.
+    if (w.durability) {
+      const left = this.condition.of(w);
+      return {
+        id: w.id, name: up ? `${w.name} ✦` : w.name,
+        short: up ? `${w.short}✦` : w.short, upgraded: up,
+        mag: left, reserve: '∞', magSize: w.durability,
+        lowAmmo: left <= Math.max(2, w.durability * 0.25),
+        reloading: false, reloadProgress: 0,
+        charge: 0, spinUp: 0, grenades: this.grenades,
+        ads: false,
+        owned: this.owned.map((id) => WEAPONS[id].short + (this.upgrades.has(id) ? '✦' : '')),
+        index: this.index,
+        condition: this.condition.fraction(w),
+      };
+    }
+
     return {
       id: w.id,
       name: up ? `${w.name} ✦` : w.name,

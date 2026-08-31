@@ -3,6 +3,7 @@ import { clamp, damp, lerp } from '../core/util.js';
 import { buildWeapon } from './gunsmith.js';
 import { MODEL_VIEWMODELS, buildModelWeapon, buildAdoptedWeapon } from './viewmodels.js';
 import { handsTemplate, attachHands } from './hands.js';
+import { WIND_TO, STRIKE_AT } from './melee.js';
 
 /** Where a gunsmith-built weapon is held at the hip. Models bring their own. */
 const HIP_POS = new THREE.Vector3(0.136, -0.116, -0.335);
@@ -59,6 +60,11 @@ export class Viewmodel {
     this.pullback = 0;
     // Action cycle: 0 at the instant of firing, 1 once the action is closed.
     this.cycleT = 1;
+    // Swing cycle: 0 at the instant of committing, 1 once back at rest.
+    this.swingT = 1;
+    this.swingDur = 0.5;
+    this.swingSide = 1;
+    this.rest = null;
     this.cylTarget = 0;
     this.parts = {};
     this.motion = {};
@@ -102,6 +108,9 @@ export class Viewmodel {
     // The moving parts, and how far each of them moves.
     this.parts = g.userData.parts || {};
     this.motion = g.userData.motion || {};
+    // Melee weapons carry a baked ready stance; the swing plays out from it.
+    this.rest = g.userData.rest || null;
+    this.swingT = 1;
     this.glow = g.userData.glow || null;
     this.cycleT = 1;
     this.cylTarget = this.parts.cylinder ? this.parts.cylinder.rotation.z : 0;
@@ -175,6 +184,19 @@ export class Viewmodel {
     this._kickPitchVel -= 7.0 * power;
     this.cycleT = 0;
     if (this.motion.cylinder) this.cylTarget -= this.motion.cylinder.step;
+  }
+
+  /**
+   * Start a swing. `duration` is the whole cycle, wind-up through recovery.
+   *
+   * Alternates side each time: two identical swings in a row read as a looping
+   * animation, and one mirrored against the last reads as a person.
+   */
+  swing(duration) {
+    this.swingT = 0;
+    this.swingDur = Math.max(0.12, duration);
+    this.swingSide = -this.swingSide;
+    return this.swingSide;
   }
 
   startReload(duration) {
@@ -264,6 +286,67 @@ export class Viewmodel {
     this.rig.scale.setScalar(lerp(0.94, 1.0, adsAmount));
 
     if (this.current) this._animateParts(dt, adsAmount);
+    if (this.current && this.rest) this._animateSwing(dt);
+  }
+
+  /**
+   * The swing.
+   *
+   * One number, `k`, runs from -1 (fully wound) through 0 (rest) to +1 (fully
+   * followed through), and the weapon's rotation and offset are read off it.
+   * The shape of `k` over the cycle is the whole animation: slow back, fast
+   * across, then a settle that overshoots slightly on the way home.
+   *
+   * The arc is mirrored by `swingSide`, so consecutive swings cross the body
+   * in opposite directions. That one detail is most of the difference between
+   * a person swinging a bat and a looping animation.
+   */
+  _animateSwing(dt) {
+    if (this.swingT >= 1) {
+      // Settle back onto the ready stance rather than snapping to it.
+      this.current.rotation.x = damp(this.current.rotation.x, this.rest.x, 12, dt);
+      this.current.rotation.y = damp(this.current.rotation.y, this.rest.y, 12, dt);
+      this.current.rotation.z = damp(this.current.rotation.z, this.rest.z, 12, dt);
+      this.current.position.set(
+        damp(this.current.position.x, 0, 12, dt),
+        damp(this.current.position.y, 0, 12, dt),
+        damp(this.current.position.z, 0, 12, dt),
+      );
+      return;
+    }
+
+    this.swingT = Math.min(1, this.swingT + dt / this.swingDur);
+    const t = this.swingT;
+    const s = this.swingSide;
+
+    let k;
+    if (t < WIND_TO) {
+      // Back and up, easing out — the pause at the top is where the weight is.
+      const u = t / WIND_TO;
+      k = -(u * u * (3 - 2 * u));
+    } else if (t < STRIKE_AT) {
+      // Through. Linear and fast: an ease here reads as underarm.
+      k = -1 + 2 * ((t - WIND_TO) / (STRIKE_AT - WIND_TO));
+    } else {
+      // Follow through and recover, decaying back to the stance.
+      const u = (t - STRIKE_AT) / (1 - STRIKE_AT);
+      k = (1 - u) * (1 - u) * Math.cos(u * 5.2);
+    }
+
+    const wind = k < 0 ? -k : 0;
+    const thru = k > 0 ? k : 0;
+    this.current.rotation.set(
+      this.rest.x + wind * 0.42 - thru * 1.05,
+      this.rest.y - s * (wind * 0.30 + thru * 0.95),
+      this.rest.z + s * (wind * 0.22 - thru * 0.38),
+    );
+    // Pull it back into the shoulder on the wind-up and throw it out on the
+    // strike, so the swing has travel and not only rotation.
+    this.current.position.set(
+      s * (wind * 0.05 - thru * 0.13),
+      wind * 0.05 - thru * 0.05,
+      wind * 0.09 - thru * 0.16,
+    );
   }
 
   // ---------------------------------------------------------- moving parts
